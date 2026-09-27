@@ -28,6 +28,7 @@ Full profile with request and response examples: `~/notes/HLS bridge — API-к�
 
 - Common params: `cat` (comma list), `offset` (default 0), `limit` (1–100, default 100), `extended=1` (no effect).
 - A request with no `q` and no ID is an RSS request. v1 returns an empty channel.
+- Until search and `t=get` ship, a search with `q` or an ID and `t=get` return error `203`.
 - Response: RSS with `newznab:response offset total`. `total` counts the filtered set. Order is stable, newest first.
 - Item: `guid` = release ID, `title`, `pubDate`, `enclosure` → `t=get` URL (absolute, from `http.public_url`), attrs `size`, `category`, and `tvdbid` / `tmdbid` / `imdb` only when verified. `size` estimates the media, not the NZB.
 - Empty result: channel without items, `total="0"`. A source error is an error, never an empty result.
@@ -60,7 +61,7 @@ Empty queue or history: `slots: []`.
 
 | Case | Response |
 |---|---|
-| Newznab logical error | HTTP 200 `<error code description/>`: `100` bad key, `200` missing param, `202` unknown `t`, `300` unknown release |
+| Newznab logical error | HTTP 200 `<error code description/>`: `100` bad key, `200` missing param, `202` unknown `t`, `203` function not available, `300` unknown release |
 | SAB logical error | HTTP 200 `{"status":false,"error":"..."}`: `API Key Required` (no key), `API Key Incorrect`, `Unknown release`, `not implemented` (unknown mode). Every mode, `version` included, checks the key. |
 | Source down before a job exists | HTTP 503, no job |
 | Failure after `addfile` | History `Failed` with `fail_message` |

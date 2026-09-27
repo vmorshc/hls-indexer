@@ -49,6 +49,7 @@ type Env struct {
 }
 
 // RedisURL returns the test Redis URL or skips the test when it is unset.
+// It does not flush. Call Redis first when the test touches data.
 func RedisURL(t testing.TB) string {
 	t.Helper()
 	u := os.Getenv(RedisURLEnv)
@@ -107,7 +108,7 @@ func Start(t testing.TB, o Options) *Env {
 
 	e.API = httptest.NewUnstartedServer(nil)
 	cfg.HTTP.PublicURL = "http://" + e.API.Listener.Addr().String()
-	api, err := app.NewAPI(cfg, Logger(t))
+	api, err := app.NewAPI(cfg)
 	if err != nil {
 		e.API.Close()
 		t.Fatal(err)

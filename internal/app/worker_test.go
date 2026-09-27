@@ -32,8 +32,8 @@ func TestWorkerConnectsToRedisAndIdles(t *testing.T) {
 }
 
 func TestWorkerStopsOnCancel(t *testing.T) {
+	testenv.Redis(t)
 	cfg := config.Config{Secrets: config.Secrets{RedisURL: config.Secret(testenv.RedisURL(t))}}
-	cfg.Worker.Jobs = 1
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- app.RunWorker(ctx, cfg, testenv.Logger(t)) }()
@@ -79,7 +79,7 @@ func TestAPIRequiresKeys(t *testing.T) {
 		{DownloaderAPIKey: "d"},
 		{IndexerAPIKey: "i"},
 	} {
-		if _, err := app.NewAPI(config.Config{Secrets: s}, testenv.Logger(t)); err == nil {
+		if _, err := app.NewAPI(config.Config{Secrets: s}); err == nil {
 			t.Errorf("secrets %v: want error", s)
 		}
 	}

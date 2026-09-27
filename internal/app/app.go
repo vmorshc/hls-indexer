@@ -20,7 +20,7 @@ import (
 const WorkerClientName = "hls-indexer-worker"
 
 // NewAPI builds the handler for /indexer/api and /downloader/api.
-func NewAPI(cfg config.Config, log *slog.Logger) (http.Handler, error) {
+func NewAPI(cfg config.Config) (http.Handler, error) {
 	var errs []error
 	if cfg.Secrets.IndexerAPIKey == "" {
 		errs = append(errs, errors.New("INDEXER_API_KEY is required"))
@@ -39,7 +39,7 @@ func NewAPI(cfg config.Config, log *slog.Logger) (http.Handler, error) {
 
 // RunAPI serves the API on http.addr until ctx ends.
 func RunAPI(ctx context.Context, cfg config.Config, log *slog.Logger) error {
-	h, err := NewAPI(cfg, log)
+	h, err := NewAPI(cfg)
 	if err != nil {
 		return err
 	}
