@@ -8,6 +8,8 @@ Code: `internal/sabnzbd` (accepts jobs), `internal/jobs` (state), `internal/down
 addfile → Queued → Downloading → Completed | Failed → retry → new job
 Queued, Downloading → pause → Paused → resume → Queued
 addfile with priority -2 → Paused
+Queued, Paused, Downloading → queue delete → gone
+Completed | Failed → history delete → archived (archive=1) | gone (archive=0)
 ```
 
 - `addfile` decodes the release ID, stores the job in Redis, enqueues it and returns `jobId`. The job keeps the upload's file name without `.nzb` as the release title (*arr names the upload after it). Without a file name it uses the release ID with `:` → `_`.
@@ -53,7 +55,8 @@ Progress for `queue`: completed segments and bytes against the playlist total an
 | Playlist fetch fails with a cached HLS URL | The source deletes the cached URL. The worker resolves again once. |
 | Source outage, segment retries exhausted, codec error, validation fails | `Failed` with `fail_message`, staging removed |
 | SAB `retry` of a `Failed` job | New job with the same release, title, category and priority. It resolves again. The failed job leaves history, as in SABnzbd. When the same release is already active in the category, retry returns that job's ID (`addfile` dedup). |
-| Delete with `del_files=1` | Remove only `<jobId>` folders in `incomplete` and `downloads` |
+| Queue delete of a `Downloading` job | The worker sees the job gone and stops as on pause. Staging is removed even with `del_files=0`. |
+| Delete with `del_files=1` | The API removes only `<jobId>` folders in `incomplete` and `downloads` |
 
 ## Runtime
 

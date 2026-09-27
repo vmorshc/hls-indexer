@@ -18,17 +18,19 @@ const Version = "4.0.0"
 var Categories = []string{"sonarr", "radarr"}
 
 type Handler struct {
-	apiKey      string
-	completeDir string
-	jobs        *jobs.Store
-	hasSource   func(name string) bool
-	log         *slog.Logger
+	apiKey        string
+	completeDir   string
+	incompleteDir string
+	jobs          *jobs.Store
+	hasSource     func(name string) bool
+	log           *slog.Logger
 }
 
-// New builds the handler. completeDir is paths.downloads. hasSource tells
-// whether a release ID prefix names a registered source.
-func New(apiKey, completeDir string, store *jobs.Store, hasSource func(string) bool, log *slog.Logger) *Handler {
-	return &Handler{apiKey: apiKey, completeDir: completeDir, jobs: store, hasSource: hasSource, log: log}
+// New builds the handler. completeDir is paths.downloads, incompleteDir is
+// paths.incomplete. hasSource tells whether a release ID prefix names a
+// registered source.
+func New(apiKey, completeDir, incompleteDir string, store *jobs.Store, hasSource func(string) bool, log *slog.Logger) *Handler {
+	return &Handler{apiKey: apiKey, completeDir: completeDir, incompleteDir: incompleteDir, jobs: store, hasSource: hasSource, log: log}
 }
 
 // maxRequest caps every request body. An HLS Indexer NZB is a few hundred bytes.

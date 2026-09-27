@@ -8,7 +8,10 @@ import (
 	"io"
 	"math"
 	"net/http"
+	"os"
 	"path"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -172,6 +175,9 @@ func (h *Handler) queue(w http.ResponseWriter, r *http.Request) {
 	case "resume":
 		h.control(w, r, h.jobs.Resume)
 		return
+	case "delete":
+		h.delete(w, r, h.jobs.DeleteQueued)
+		return
 	default:
 		writeError(w, "not implemented")
 		return
@@ -218,6 +224,32 @@ func (h *Handler) control(w http.ResponseWriter, r *http.Request, do func(contex
 	writeJSON(w, map[string]any{"status": true, "nzo_ids": []string{id}})
 }
 
+// jobID matches the IDs jobs.Add creates. Only such IDs name folders to delete.
+var jobID = regexp.MustCompile(`^hls_[0-9a-f]{16}$`)
+
+// delete drops the job in value with do. del_files=1 then removes only the
+// job's own folders in incomplete and downloads. A job already gone succeeds.
+func (h *Handler) delete(w http.ResponseWriter, r *http.Request, do func(context.Context, string) error) {
+	id := r.FormValue("value")
+	if !jobID.MatchString(id) {
+		writeJSON(w, map[string]any{"status": true})
+		return
+	}
+	if err := do(r.Context(), id); err != nil {
+		h.log.Error("delete", "err", err)
+		http.Error(w, "job store unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	if r.FormValue("del_files") == "1" {
+		for _, dir := range []string{h.incompleteDir, h.completeDir} {
+			if err := os.RemoveAll(filepath.Join(dir, id)); err != nil {
+				h.log.Error("delete files", "job", id, "err", err)
+			}
+		}
+	}
+	writeJSON(w, map[string]any{"status": true})
+}
+
 func mib(b float64) string { return fmt.Sprintf("%.2f", b/(1<<20)) }
 
 // timeLeft extrapolates the elapsed time over the remaining segments.
@@ -245,16 +277,24 @@ type historySlot struct {
 }
 
 func (h *Handler) history(w http.ResponseWriter, r *http.Request) {
-	if r.FormValue("name") != "" {
-		writeError(w, "not implemented")
-		return
-	}
 	if h.jobs == nil {
 		http.Error(w, "job store unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	switch r.FormValue("name") {
+	case "":
+	case "delete":
+		// archive defaults to 1, as in SABnzbd 4.
+		archive := r.FormValue("archive") != "0"
+		h.delete(w, r, func(ctx context.Context, id string) error { return h.jobs.DeleteHistory(ctx, id, archive) })
+		return
+	default:
+		writeError(w, "not implemented")
+		return
+	}
 	start, limit := atoi(r.FormValue("start")), atoi(r.FormValue("limit"))
-	js, total, err := h.jobs.History(r.Context(), r.FormValue("category"), r.FormValue("status"), start, limit)
+	archived := r.FormValue("archive") == "1"
+	js, total, err := h.jobs.History(r.Context(), r.FormValue("category"), r.FormValue("status"), archived, start, limit)
 	if err != nil {
 		h.log.Error("history", "err", err)
 		http.Error(w, "job store unavailable", http.StatusServiceUnavailable)

@@ -278,19 +278,19 @@ func TestQueueAndHistory(t *testing.T) {
 	if q, _ := s.Queue(ctx, ""); len(q) != 1 || q[0].ID != ids[3] || q[0].Status != jobs.Queued {
 		t.Fatalf("queue %+v", q)
 	}
-	h, total, err := s.History(ctx, "sonarr", "", 0, 1)
+	h, total, err := s.History(ctx, "sonarr", "", false, 0, 1)
 	if err != nil || total != 2 || len(h) != 1 || h[0].ID != ids[2] || h[0].Storage != "/d/"+ids[2] {
 		t.Fatalf("history page 1: %+v total=%d err=%v", h, total, err)
 	}
-	h, _, _ = s.History(ctx, "sonarr", "", 1, 1)
+	h, _, _ = s.History(ctx, "sonarr", "", false, 1, 1)
 	if len(h) != 1 || h[0].ID != ids[0] {
 		t.Fatalf("history page 2: %+v", h)
 	}
-	h, total, _ = s.History(ctx, "", "failed", 0, 0)
+	h, total, _ = s.History(ctx, "", "failed", false, 0, 0)
 	if total != 1 || h[0].Status != jobs.Failed || h[0].FailMessage != "boom" {
 		t.Fatalf("history radarr %+v", h)
 	}
-	if h, _, _ := s.History(ctx, "none", "", 0, 0); h == nil || len(h) != 0 {
+	if h, _, _ := s.History(ctx, "none", "", false, 0, 0); h == nil || len(h) != 0 {
 		t.Fatalf("empty history %#v", h)
 	}
 }
@@ -318,7 +318,7 @@ func TestRetryReplacesFailedJob(t *testing.T) {
 	if err != nil || id == old {
 		t.Fatalf("retry %s %v", id, err)
 	}
-	if h, total, _ := s.History(ctx, "", "", 0, 0); total != 0 {
+	if h, total, _ := s.History(ctx, "", "", false, 0, 0); total != 0 {
 		t.Fatalf("history %+v", h)
 	}
 	j := claim(t, s)

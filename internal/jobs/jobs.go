@@ -69,6 +69,7 @@ type Job struct {
 	Bytes       int64 // size of the published file
 	Storage     string
 	FailMessage string
+	Archived    bool // history delete with archive=1
 }
 
 // Store keeps jobs in Redis.
@@ -348,6 +349,56 @@ func (s *Store) Retry(ctx context.Context, id string) (string, error) {
 	return newID, err
 }
 
+// deleteActiveScript drops a Queued, Paused or Downloading job. The worker sees
+// the job gone and stops the run.
+var deleteActiveScript = redis.NewScript(`
+local st = redis.call('HGET', KEYS[1], 'status')
+if st ~= 'Queued' and st ~= 'Paused' and st ~= 'Downloading' then return 0 end
+redis.call('ZREM', KEYS[2], ARGV[1])
+redis.call('ZREM', KEYS[3], ARGV[1])
+if redis.call('GET', KEYS[4]) == ARGV[1] then redis.call('DEL', KEYS[4]) end
+redis.call('DEL', KEYS[1])
+return 1
+`)
+
+// DeleteQueued drops an active job. A job that is gone or finished is left
+// alone without error. The API calls it.
+func (s *Store) DeleteQueued(ctx context.Context, id string) error {
+	j, err := s.Get(ctx, id)
+	if errors.Is(err, ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return deleteActiveScript.Run(ctx, s.rdb,
+		[]string{jobKey(id), queueKey, activeKey, dedupKey(j.Category, j.Release)}, id).Err()
+}
+
+// deleteHistoryScript archives (ARGV[2] = 1) or deletes a finished job.
+var deleteHistoryScript = redis.NewScript(`
+local st = redis.call('HGET', KEYS[1], 'status')
+if st ~= 'Completed' and st ~= 'Failed' then return 0 end
+if ARGV[2] == '1' then
+  redis.call('HSET', KEYS[1], 'archived', 1)
+else
+  redis.call('ZREM', KEYS[2], ARGV[1])
+  redis.call('DEL', KEYS[1])
+end
+return 1
+`)
+
+// DeleteHistory archives or deletes a finished job. An archived entry leaves
+// History and shows in Archive. A job that is gone or still active is left
+// alone without error. The API calls it.
+func (s *Store) DeleteHistory(ctx context.Context, id string, archive bool) error {
+	a := 0
+	if archive {
+		a = 1
+	}
+	return deleteHistoryScript.Run(ctx, s.rdb, []string{jobKey(id), historyKey}, id, a).Err()
+}
+
 // ErrNotFound marks an unknown job ID.
 var ErrNotFound = errors.New("job not found")
 
@@ -371,12 +422,14 @@ func (s *Store) Queue(ctx context.Context, category string) ([]Job, error) {
 
 // History lists finished jobs, newest first, filtered by category and status
 // (case-insensitive) and then paged. Empty filters match all. limit 0 means all.
-func (s *Store) History(ctx context.Context, category, status string, start, limit int) (jobs []Job, total int, err error) {
+// archived selects archived entries instead of the others.
+func (s *Store) History(ctx context.Context, category, status string, archived bool, start, limit int) (jobs []Job, total int, err error) {
 	js, err := s.list(ctx, historyKey, true)
 	if err != nil {
 		return nil, 0, err
 	}
 	all := filter(js, category)
+	all = slices.DeleteFunc(all, func(j Job) bool { return j.Archived != archived })
 	if status != "" {
 		all = slices.DeleteFunc(all, func(j Job) bool { return !strings.EqualFold(j.Status, status) })
 	}
@@ -455,5 +508,6 @@ func parse(m map[string]string) Job {
 		SegmentsTotal: int(i("segments_total")), SegmentsDone: int(i("segments_done")),
 		BytesDone: i("bytes_done"), SizeEstimate: i("size_estimate"),
 		Bytes: i("bytes"), Storage: m["storage"], FailMessage: m["fail_message"],
+		Archived: m["archived"] == "1",
 	}
 }

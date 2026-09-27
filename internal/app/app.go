@@ -49,7 +49,7 @@ func NewAPI(cfg config.Config, rdb *redis.Client, log *slog.Logger) (http.Handle
 	if rdb != nil {
 		store = jobs.New(rdb)
 	}
-	mux.Handle("/downloader/api", sabnzbd.New(cfg.Secrets.DownloaderAPIKey.Reveal(), cfg.Paths.Downloads, store, cat.HasSource, log))
+	mux.Handle("/downloader/api", sabnzbd.New(cfg.Secrets.DownloaderAPIKey.Reveal(), cfg.Paths.Downloads, cfg.Paths.Incomplete, store, cat.HasSource, log))
 	return mux, nil
 }
 
