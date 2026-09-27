@@ -1,0 +1,17 @@
+# Defaults baked into the binary and the image.
+# Override with --config <file> (merged key by key) or env vars (see README).
+# Secrets are env-only and never belong here.
+http:
+  addr: ":8080"
+  public_url: "http://localhost:8080"
+paths:
+  incomplete: "/data/incomplete"
+  downloads: "/data/downloads"
+worker:
+  jobs: 1
+  segment_concurrency: 8
+uakino:
+  base_url: "https://uakino.best"
+  rps: 1
+tmdb:
+  base_url: "https://api.themoviedb.org/3"

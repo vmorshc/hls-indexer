@@ -2,7 +2,7 @@
 
 HLS Indexer lets Sonarr and Radarr find and download Ukrainian-dubbed movies, series, anime and cartoons from open streaming sites. The first source is [UAKino](https://uakino.best).
 
-Status: design stage. The code is not written yet.
+Status: v0 in progress. The service skeleton runs: config, Docker, Newznab caps and SABnzbd config pass *arr connection tests. Search and downloads are not implemented yet.
 
 ## Goals
 
@@ -36,6 +36,8 @@ go build -o bin/hls-indexer ./cmd/hls-indexer
 docker compose up --build        # redis + api (:8080) + worker, ./data mounted at /data
 ```
 
+Compose sets the local API keys `indexer-local-key` and `downloader-local-key` and takes `TMDB_API_KEY` from the shell.
+
 Local run against the compose Redis:
 
 ```sh
@@ -47,11 +49,11 @@ go run ./cmd/hls-indexer worker
 
 Three layers, later wins:
 
-1. `config/default.yaml`, baked into the image.
+1. `config/default.yaml`, embedded in the binary. The image also ships it at `/etc/hls-indexer/default.yaml` as a template for overrides.
 2. An optional override file, `--config <path>`. HLS Indexer merges its keys over the defaults.
 3. Env vars.
 
-Compose hardcodes local values.
+Unknown keys in the override file are an error. Compose hardcodes local values.
 
 Secrets exist only as env vars:
 
@@ -75,6 +77,7 @@ Settings:
 | `worker.segment_concurrency` | `SEGMENT_CONCURRENCY` | `8` |
 | `uakino.base_url` | `UAKINO_BASE_URL` | `https://uakino.best` |
 | `uakino.rps` | `UAKINO_RPS` | `1` |
+| `tmdb.base_url` | `TMDB_BASE_URL` | `https://api.themoviedb.org/3` |
 
 ## Sonarr and Radarr setup
 
@@ -93,7 +96,11 @@ Mount `/data` at the same path in *arr and HLS Indexer.
 
 ## Tests
 
+Tests that need Redis use the separate test Redis from compose and flush it before each test. Without `TEST_REDIS_URL` they skip.
+
 ```sh
+docker compose up -d redis-test                        # test Redis on localhost:6380
+export TEST_REDIS_URL=redis://localhost:6380/0
 go test ./...                                          # unit, fixture and snapshot tests
 go test ./... -update                                  # rewrite golden files
 UAKINO_LIVE=1 go test ./internal/source/uakino/...     # live UAKino, overwrites fixtures

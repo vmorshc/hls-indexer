@@ -1,0 +1,50 @@
+x-app: &app
+  build: .
+  image: hls-indexer
+  restart: unless-stopped
+  volumes:
+    - ./data:/data
+  environment:
+    INDEXER_API_KEY: indexer-local-key
+    DOWNLOADER_API_KEY: downloader-local-key
+    TMDB_API_KEY: ${TMDB_API_KEY:-}
+    REDIS_URL: redis://redis:6379/0
+  depends_on:
+    redis:
+      condition: service_healthy
+
+services:
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    restart: unless-stopped
+    volumes:
+      - redis:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    <<: *app
+    command: ["api"]
+    ports:
+      - "8080:8080"
+
+  worker:
+    <<: *app
+    command: ["worker"]
+
+  # Used only by tests: TEST_REDIS_URL=redis://localhost:6380/0. Tests flush it.
+  redis-test:
+    image: redis:8-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    profiles: ["test"]
+    ports:
+      - "6380:6379"
+
+volumes:
+  redis:

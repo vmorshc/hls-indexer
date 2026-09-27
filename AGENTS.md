@@ -20,7 +20,9 @@ When a decision in code changes, update its doc in the same change.
 
 ```
 cmd/hls-indexer/          main, roles: api | worker
-config/default.yaml       defaults baked into the image
+config/default.yaml       defaults, embedded in the binary (config/embed.go)
+internal/app/             role wiring: API handler, api and worker runners
+internal/testenv/         S1 test harness
 internal/config/          defaults + override file + env
 internal/newznab/         /indexer/api
 internal/sabnzbd/         /downloader/api
@@ -41,6 +43,7 @@ internal/downloader/      HLS → MKV worker
 
 ## Tests
 
+- HTTP API (S1): use `internal/testenv`. It runs the API and worker in-process, plugs fake UAKino and TMDb servers, and uses the test Redis from `TEST_REDIS_URL` (`docker compose up -d redis-test`). Tests without it skip.
 - Source parsers: HTML fixtures in `testdata/`. Live mode (`UAKINO_LIVE=1`) fetches fresh HTML for the test titles, parses it and overwrites the fixtures.
 - Helpers (`internal/release`, title parsing, conversions): table tests for the base scenarios only.
 - Video pipeline: input is 2–3 real segments of the lowest variant, never a whole episode, served by a local test server. The golden file stores the `ffprobe` summary of the output MKV: tracks, codecs, languages, duration, packet counts. Rewrite goldens with `go test ./... -update`.

@@ -61,7 +61,7 @@ Empty queue or history: `slots: []`.
 | Case | Response |
 |---|---|
 | Newznab logical error | HTTP 200 `<error code description/>`: `100` bad key, `200` missing param, `202` unknown `t`, `300` unknown release |
-| SAB logical error | HTTP 200 `{"status":false,"error":"..."}`, e.g. `API Key Incorrect`, `Unknown release` |
+| SAB logical error | HTTP 200 `{"status":false,"error":"..."}`: `API Key Required` (no key), `API Key Incorrect`, `Unknown release`, `not implemented` (unknown mode). Every mode, `version` included, checks the key. |
 | Source down before a job exists | HTTP 503, no job |
 | Failure after `addfile` | History `Failed` with `fail_message` |
 

@@ -92,8 +92,10 @@ A source turns a query into titles and a release coordinate into a playable stre
 
 ## Deployment
 
-- Dockerfile stages: `golang:1.27.1` builds with `CGO_ENABLED=0` → `mwader/static-ffmpeg:9.0.2` supplies `ffmpeg` and `ffprobe` → distroless static runtime. The image includes `config/default.yaml`.
-- `compose.yaml` runs `redis` (AOF on), `api` and `worker` from one image, with a shared `./data:/data` volume.
+- Dockerfile stages: `golang:1.27.1` builds with `CGO_ENABLED=0` → `mwader/static-ffmpeg:9.0.2` supplies `ffmpeg` and `ffprobe` → `gcr.io/distroless/static-debian13` runtime. Binaries live in `/usr/local/bin`. The binary embeds `config/default.yaml`. The image also ships it at `/etc/hls-indexer/default.yaml`.
+- The entrypoint is `hls-indexer`, the command is the role: `api` (default) or `worker`. The worker pings Redis at start and exits on failure. The api refuses to start without both API keys.
+- `compose.yaml` runs `redis` (AOF on), `api` and `worker` from one image, with a shared `./data:/data` volume. `redis-test` (profile `test`, port 6380, no persistence) serves tests only.
+- `internal/app` wires the roles. `internal/testenv` is the S1 test harness: in-process API and worker, fake UAKino and TMDb servers, test Redis from `TEST_REDIS_URL`.
 
 ## Details
 
