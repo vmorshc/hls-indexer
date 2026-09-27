@@ -43,3 +43,9 @@ Used by `/wayfinder`. The **map** is a single issue with **child** issues as tic
 - **Frontier query**: list the map's open children (`gh issue list --state open`, scoped to the map's sub-issues / task list), drop any with an open blocker (`issue_dependencies_summary.blocked_by > 0`, or an open issue in the `Blocked by` line) or an assignee; first in map order wins.
 - **Claim**: `gh issue edit <n> --add-assignee @me`, the session's first write.
 - **Resolve**: `gh issue comment <n> --body "<answer>"`, then `gh issue close <n>`, then append a context pointer (gist + link) to the map's Decisions-so-far.
+
+## Implementation
+
+When you work on implementations of some ticket (with /skill:implement or /skill:implement-spec) you have to:
+* mark existed "Acceptance criteria" checkboxes done during review where you see it's really done. Do not create this checkboxes, just mark if we have some
+* close ticket if all Acceptance criterias is done after review and all fixes applied 
