@@ -161,6 +161,20 @@ func TestRetryReplacesFailedJob(t *testing.T) {
 	}
 }
 
+func TestRetryReturnsActiveJobOfSameRelease(t *testing.T) {
+	ctx := context.Background()
+	s := jobs.New(testenv.Redis(t))
+	failed, _ := s.Add(ctx, "r1", "t", "sonarr", jobs.PriorityNormal)
+	s.Fail(ctx, failed, "boom")
+	active, _ := s.Add(ctx, "r1", "t", "sonarr", jobs.PriorityNormal)
+	if id, err := s.Retry(ctx, failed); err != nil || id != active {
+		t.Fatalf("retry %s %v, want %s", id, err, active)
+	}
+	if q, _ := s.Queue(ctx, ""); len(q) != 1 {
+		t.Fatalf("queue %+v", q)
+	}
+}
+
 func TestRetryNeedsFailedJob(t *testing.T) {
 	ctx := context.Background()
 	s := jobs.New(testenv.Redis(t))

@@ -92,6 +92,10 @@ func TestFailedJobAndRetry(t *testing.T) {
 		{"missing segment", segment("segment2.ts", func(w http.ResponseWriter, _ []byte) {
 			http.Error(w, "gone", http.StatusNotFound)
 		}), "segment 2: 2 attempts: status 404"},
+		{"short segment", segment("segment2.ts", func(w http.ResponseWriter, data []byte) {
+			w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+			w.Write(data[:len(data)/2])
+		}), "segment 2: 2 attempts: unexpected EOF"},
 		{"truncated stream", segment("segment3.ts", func(w http.ResponseWriter, data []byte) {
 			w.(http.Flusher).Flush() // no Content-Length: the cut is invisible to the download
 			w.Write(data[:188*100])
@@ -117,6 +121,7 @@ func TestFailedJobAndRetry(t *testing.T) {
 			}
 
 			broken.Store(nil)
+			resolves := ua.Count("GET /vod/")
 			retry := sab(t, e.Env, "mode=retry&value="+id)
 			newID, _ := retry["nzo_id"].(string)
 			if retry["status"] != true || newID == "" || newID == id {
@@ -125,6 +130,9 @@ func TestFailedJobAndRetry(t *testing.T) {
 			slot = waitHistory(t, e.Env, newID)
 			if slot["status"] != "Completed" || slot["category"] != "radarr" || slot["name"] != it.Title {
 				t.Fatalf("retried job %v", slot)
+			}
+			if ua.Count("GET /vod/") == resolves {
+				t.Error("retry did not resolve the player page again")
 			}
 			for _, s := range slots(t, e.Env, "history", "") {
 				if s["nzo_id"] == id {

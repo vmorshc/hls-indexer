@@ -200,8 +200,9 @@ func (s *Store) finish(ctx context.Context, id string, values ...any) error {
 }
 
 // Retry queues a failed job again as a new job and drops the failed one from
-// history, like SABnzbd. The new job resolves the stream from scratch. It
-// returns ErrNotFound unless id is a Failed job.
+// history, like SABnzbd. The new job resolves the stream from scratch. When
+// the release is already active in the category, the active job's ID comes
+// back, as in Add. It returns ErrNotFound unless id is a Failed job.
 func (s *Store) Retry(ctx context.Context, id string) (string, error) {
 	j, err := s.Get(ctx, id)
 	if err != nil {

@@ -48,7 +48,7 @@ Progress for `queue`: completed segments and bytes against the playlist total an
 |---|---|
 | Playlist fetch fails with a cached HLS URL | The source deletes the cached URL. The worker resolves again once. |
 | Source outage, segment retries exhausted, codec error, validation fails | `Failed` with `fail_message`, staging removed |
-| SAB `retry` of a `Failed` job | New job with the same release, title, category and priority. It resolves again. The failed job leaves history, as in SABnzbd. |
+| SAB `retry` of a `Failed` job | New job with the same release, title, category and priority. It resolves again. The failed job leaves history, as in SABnzbd. When the same release is already active in the category, retry returns that job's ID (`addfile` dedup). |
 | Delete with `del_files=1` | Remove only `<jobId>` folders in `incomplete` and `downloads` |
 
 ## Runtime
