@@ -25,16 +25,26 @@ var update = flag.Bool("update", false, "rewrite golden files")
 // (6.38, 5.01, 6.30) differ from the media inside by up to 2 s per segment.
 // Whole streams even this out (see downloader.md), three segments do not, so
 // the test playlist carries the probed media durations.
-var segments = []struct {
-	file     string
-	duration float64
-}{
-	{"segment1.ts", 6.17},
-	{"segment2.ts", 5.00},
-	{"segment3.ts", 4.14},
+var segments = []fixture{
+	{uakinoDir, "segment1.ts", 6.17},
+	{uakinoDir, "segment2.ts", 5.00},
+	{uakinoDir, "segment3.ts", 4.14},
 }
 
-func segmentDir() string { return filepath.Join("..", "source", "uakino", "testdata") }
+// The same 15 s re-encoded to MPEG-2 video and MP2 audio, cut into 3 segments
+// with continuous timestamps (ffmpeg's hls muxer). Durations are probed.
+var mpeg2Segments = []fixture{
+	{"testdata", "mpeg2-1.ts", 6.02},
+	{"testdata", "mpeg2-2.ts", 6.04},
+	{"testdata", "mpeg2-3.ts", 3.33},
+}
+
+type fixture struct {
+	dir, file string
+	duration  float64
+}
+
+var uakinoDir = filepath.Join("..", "source", "uakino", "testdata")
 
 func needFFmpeg(t *testing.T) {
 	t.Helper()
@@ -55,21 +65,25 @@ var vtts = []source.Subtitle{
 	{Label: "Англійські", Language: "eng", URL: "/subtitle-83766_en.vtt"},
 }
 
-// segmentServer serves the fixture segments and VTT files. fail makes the first n requests of each segment fail.
+// segmentServer serves the uakino fixture segments and VTT files. The first failFirst requests of each segment fail.
 func segmentServer(t *testing.T, failFirst int) (*httptest.Server, hls.Media) {
-	var hits [3]atomic.Int32
+	return fixtureServer(t, segments, failFirst)
+}
+
+func fixtureServer(t *testing.T, segs []fixture, failFirst int) (*httptest.Server, hls.Media) {
+	hits := make([]atomic.Int32, len(segs))
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, ".vtt") {
-			http.ServeFile(w, r, filepath.Join(segmentDir(), filepath.Base(r.URL.Path)))
+			http.ServeFile(w, r, filepath.Join(uakinoDir, filepath.Base(r.URL.Path)))
 			return
 		}
-		for i, s := range segments {
+		for i, s := range segs {
 			if r.URL.Path == "/"+s.file {
 				if int(hits[i].Add(1)) <= failFirst {
 					http.Error(w, "flaky", http.StatusBadGateway)
 					return
 				}
-				http.ServeFile(w, r, filepath.Join(segmentDir(), s.file))
+				http.ServeFile(w, r, filepath.Join(s.dir, s.file))
 				return
 			}
 		}
@@ -77,7 +91,7 @@ func segmentServer(t *testing.T, failFirst int) (*httptest.Server, hls.Media) {
 	}))
 	t.Cleanup(srv.Close)
 	m := hls.Media{Ended: true}
-	for _, s := range segments {
+	for _, s := range segs {
 		m.Segments = append(m.Segments, hls.Segment{URL: srv.URL + "/" + s.file, Duration: s.duration})
 	}
 	return srv, m
@@ -110,12 +124,28 @@ func TestMuxGolden(t *testing.T) {
 	if done != 3 || bytes != 614196+369044+513240 {
 		t.Fatalf("progress %d segments %d bytes", done, bytes)
 	}
-	pr, err := testPipeline(srv).Probe(context.Background(), out)
+	checkGolden(t, testPipeline(srv), out, "mux.golden.json")
+}
+
+// S4 re-encode path: 3 MPEG-2 + MP2 segments → H.264 + AAC MKV.
+func TestMuxReencodeGolden(t *testing.T) {
+	needFFmpeg(t)
+	srv, m := fixtureServer(t, mpeg2Segments, 0)
+	out := filepath.Join(t.TempDir(), "x.mkv")
+	if err := testPipeline(srv).Mux(context.Background(), m, nil, out, func(int, int64) {}); err != nil {
+		t.Fatal(err)
+	}
+	checkGolden(t, testPipeline(srv), out, "mux-reencode.golden.json")
+}
+
+func checkGolden(t *testing.T, p Pipeline, out, name string) {
+	t.Helper()
+	pr, err := p.Probe(context.Background(), out)
 	if err != nil {
 		t.Fatal(err)
 	}
 	got := summary(pr)
-	golden := filepath.Join("testdata", "mux.golden.json")
+	golden := filepath.Join("testdata", name)
 	if *update {
 		os.MkdirAll("testdata", 0o755)
 		if err := os.WriteFile(golden, []byte(got), 0o644); err != nil {
@@ -198,5 +228,38 @@ func TestValidate(t *testing.T) {
 		if err := (Probe{Tracks: tt.tracks}).Validate(100, tt.subs); (err == nil) != tt.ok {
 			t.Errorf("%s: err %v", tt.name, err)
 		}
+	}
+}
+
+func TestCodecArgs(t *testing.T) {
+	tests := []struct {
+		in   Codecs
+		want string
+	}{
+		{Codecs{"h264", "aac"}, "-c:v copy -c:a copy"},
+		{Codecs{"mpeg2video", "mp2"}, "-c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -c:a aac -b:a 192k"},
+		{Codecs{"h264", "mp3"}, "-c:v copy -c:a aac -b:a 192k"},
+		{Codecs{"hevc", "aac"}, "-c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -c:a copy"},
+	}
+	for _, tt := range tests {
+		if got := strings.Join(tt.in.args(), " "); got != tt.want {
+			t.Errorf("%v: got %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestProbeSegment(t *testing.T) {
+	needFFmpeg(t)
+	b, err := os.ReadFile(filepath.Join("testdata", "mpeg2-1.ts"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := Pipeline{FFprobe: "ffprobe"}
+	c, err := p.ProbeSegment(context.Background(), b)
+	if err != nil || c != (Codecs{"mpeg2video", "mp2"}) {
+		t.Fatalf("got %v, %v", c, err)
+	}
+	if _, err := p.ProbeSegment(context.Background(), []byte("not a segment")); err == nil {
+		t.Fatal("garbage probed without error")
 	}
 }

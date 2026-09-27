@@ -1,0 +1,21 @@
+{
+  "duration": "15.3",
+  "tracks": [
+    {
+      "Type": "video",
+      "Codec": "h264",
+      "Language": "",
+      "Title": "",
+      "Duration": "15.3",
+      "Packets": 367
+    },
+    {
+      "Type": "audio",
+      "Codec": "aac",
+      "Language": "ukr",
+      "Title": "",
+      "Duration": "15.3",
+      "Packets": 658
+    }
+  ]
+}

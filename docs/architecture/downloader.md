@@ -17,9 +17,9 @@ addfile → Queued → Downloading → Completed
 ## Pipeline
 
 1. **Resolve.** Decode the release ID, load the title page and find the voice (by hash) and episode. Call `Source.Resolve`. It returns the master m3u8 and subtitle tracks: VTT URL, label and language. Pick the best variant and read the media playlist. A playlist without `EXT-X-ENDLIST` fails. Download each VTT (same retries as segments) and convert it to SRT in Go. A subtitle that fails to download or parse fails the job.
-2. **Probe.** Run `ffprobe` on the first segment. H.264 video and AAC audio get stream copy. Other codecs get a re-encode to H.264 and AAC. *Not built yet: v0 always stream-copies.*
+2. **Probe.** Download the first segment and pipe it to `ffprobe`. H.264 video and AAC audio get stream copy. Other video is re-encoded with `libx264 -preset veryfast -crf 20 -pix_fmt yuv420p` (8-bit plays everywhere). Other audio is re-encoded with `aac -b:a 192k`. A segment without a video or audio stream fails the job. The probed segment is the first one fed to `ffmpeg`, not downloaded again.
 3. **Download.** Fetch segments in parallel (`worker.segment_concurrency`, default 8). At most that many segments sit in memory. A segment is complete when the status is 200 and the body matches `Content-Length`. v0 tries each segment 5 times (backoff 1 s, doubled). Never skip a segment.
-4. **Mux.** Start `ffmpeg` as a subprocess. Write segments to `pipe:0` in playlist order. Write each SRT to its own pipe (`pipe:3`, `pipe:4`, …, ffmpeg's extra file descriptors). Map the first video and first audio track and one subtitle track per pipe, stream copy, audio language `ukr`. A subtitle track gets the source's language (`ukr`, `eng`, none if unknown) and the source label as title. Output: `/data/incomplete/<jobId>/<release title>.mkv`. No segment or subtitle files touch the disk.
+4. **Mux.** Start `ffmpeg` as a subprocess. Write segments to `pipe:0` in playlist order. Write each SRT to its own pipe (`pipe:3`, `pipe:4`, …, ffmpeg's extra file descriptors). Map the first video and first audio track and one subtitle track per pipe. Video and audio use the codec args from the probe, subtitles stream copy. Audio language `ukr`. A subtitle track gets the source's language (`ukr`, `eng`, none if unknown) and the source label as title. Output: `/data/incomplete/<jobId>/<release title>.mkv`. No segment or subtitle files touch the disk.
 5. **Validate.** All of these must pass:
    - The ledger shows every segment written.
    - `ffmpeg` exited 0.
@@ -37,7 +37,7 @@ addfile → Queued → Downloading → Completed
    | Chainsaw Man E1 (`vod/76971`) | 1525.02 s | +0.05 s | +1.11 s |
    | Thomas Crown Affair (`vod/128413`) | 6797.08 s | +0.05 s | +0.21 s |
 
-   The shortest segment is about 4.6 s, so 2 s still catches a lost segment. Single segments do not match their `EXTINF` (off by up to 2 s), only whole streams do. Tests with 2–3 segments use the probed durations as `EXTINF`.
+   The shortest segment is about 4.6 s, so 2 s still catches a lost segment. Single segments do not match their `EXTINF` (off by up to 2 s), only whole streams do. Tests with 2–3 segments use the probed durations as `EXTINF`. The re-encode test uses the same 3 segments converted to MPEG-2 video and MP2 audio (`internal/downloader/testdata/mpeg2-*.ts`).
 6. **Publish.** fsync the file and the staging folder, then rename `/data/incomplete/<jobId>` to `/data/downloads/<jobId>`. Mark `Completed` with `storage=/data/downloads/<jobId>`. The worker retries a failed status write until Redis answers.
 
 Progress for `queue`: completed segments and bytes against the playlist total and the size estimate.

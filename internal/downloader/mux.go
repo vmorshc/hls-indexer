@@ -45,16 +45,29 @@ func (p Pipeline) Subtitles(ctx context.Context, subs []source.Subtitle) ([]Subt
 	return out, nil
 }
 
-// Mux downloads the segments in parallel and writes them to ffmpeg's stdin in
-// playlist order. Segments stay in memory. Each subtitle goes to ffmpeg through
-// its own pipe: pipe:3, pipe:4, … progress gets the count of written segments
-// and the size of the last one. Mux validates the output.
+// Mux probes the first segment's codecs, then downloads the segments in
+// parallel and writes them to ffmpeg's stdin in playlist order. Segments stay
+// in memory. Each subtitle goes to ffmpeg through its own pipe: pipe:3,
+// pipe:4, … progress gets the count of written segments and the size of the
+// last one. Mux validates the output.
 func (p Pipeline) Mux(ctx context.Context, m hls.Media, subs []Subtitle, out string, progress func(done int, n int64)) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
+	if len(m.Segments) == 0 {
+		return errors.New("media playlist: no segments")
+	}
+	first, err := p.segment(ctx, m.Segments[0].URL)
+	if err != nil {
+		return fmt.Errorf("segment 1: %w", err)
+	}
+	codecs, err := p.ProbeSegment(ctx, first)
+	if err != nil {
+		return err
+	}
+
 	var stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, p.FFmpeg, muxArgs(subs, out)...)
+	cmd := exec.CommandContext(ctx, p.FFmpeg, muxArgs(codecs, subs, out)...)
 	cmd.Stderr = &limitedWriter{buf: &stderr, max: 4096}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -96,7 +109,7 @@ func (p Pipeline) Mux(ctx context.Context, m hls.Media, subs []Subtitle, out str
 			w.Close()
 		})
 	}
-	ledger, writeErr := p.feed(ctx, m, stdin, progress)
+	ledger, writeErr := p.feed(ctx, m, first, stdin, progress)
 	stdin.Close()
 	if writeErr != nil {
 		cancel()
@@ -123,8 +136,8 @@ func (p Pipeline) Mux(ctx context.Context, m hls.Media, subs []Subtitle, out str
 }
 
 // muxArgs maps the first video and audio track of pipe:0 and one SRT track
-// per subtitle pipe, all stream copy.
-func muxArgs(subs []Subtitle, out string) []string {
+// per subtitle pipe. Codecs decides copy or re-encode for video and audio.
+func muxArgs(c Codecs, subs []Subtitle, out string) []string {
 	args := []string{"-hide_banner", "-nostdin", "-loglevel", "error", "-f", "mpegts", "-i", "pipe:0"}
 	for i := range subs {
 		args = append(args, "-f", "srt", "-i", fmt.Sprintf("pipe:%d", i+3))
@@ -133,7 +146,8 @@ func muxArgs(subs []Subtitle, out string) []string {
 	for i := range subs {
 		args = append(args, "-map", fmt.Sprintf("%d:s:0", i+1))
 	}
-	args = append(args, "-c", "copy", "-metadata:s:a:0", "language=ukr")
+	args = append(args, c.args()...)
+	args = append(args, "-c:s", "copy", "-metadata:s:a:0", "language=ukr")
 	for i, s := range subs {
 		if s.Language != "" {
 			args = append(args, fmt.Sprintf("-metadata:s:s:%d", i), "language="+s.Language)
@@ -151,8 +165,9 @@ type result struct {
 }
 
 // feed downloads segments with bounded concurrency and writes them in order.
-// At most Concurrency segments are in memory. It returns the number written.
-func (p Pipeline) feed(ctx context.Context, m hls.Media, w interface{ Write([]byte) (int, error) }, progress func(int, int64)) (int, error) {
+// first is segment 1, already downloaded for the probe. At most Concurrency
+// segments are in memory. It returns the number written.
+func (p Pipeline) feed(ctx context.Context, m hls.Media, first []byte, w interface{ Write([]byte) (int, error) }, progress func(int, int64)) (int, error) {
 	n := max(p.Concurrency, 1)
 	slots := make([]chan result, len(m.Segments))
 	for i := range slots {
@@ -165,6 +180,10 @@ func (p Pipeline) feed(ctx context.Context, m hls.Media, w interface{ Write([]by
 			case sem <- struct{}{}:
 			case <-ctx.Done():
 				return
+			}
+			if i == 0 {
+				slots[0] <- result{first, nil}
+				continue
 			}
 			go func() {
 				b, err := p.segment(ctx, s.URL)
@@ -213,6 +232,61 @@ func (p Pipeline) segment(ctx context.Context, u string) ([]byte, error) {
 		}
 	}
 	return nil, fmt.Errorf("%d attempts: %w", attempts, err)
+}
+
+// Codecs are the first video and audio codec of a segment, as ffprobe names them.
+type Codecs struct {
+	Video, Audio string
+}
+
+// args stream-copies H.264 video and AAC audio and re-encodes anything else
+// to H.264 (yuv420p, 8-bit, plays everywhere) and AAC.
+func (c Codecs) args() []string {
+	var a []string
+	if c.Video == "h264" {
+		a = append(a, "-c:v", "copy")
+	} else {
+		a = append(a, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p")
+	}
+	if c.Audio == "aac" {
+		a = append(a, "-c:a", "copy")
+	} else {
+		a = append(a, "-c:a", "aac", "-b:a", "192k")
+	}
+	return a
+}
+
+// ProbeSegment runs ffprobe on one MPEG-TS segment through stdin.
+func (p Pipeline) ProbeSegment(ctx context.Context, seg []byte) (Codecs, error) {
+	cmd := exec.CommandContext(ctx, p.FFprobe, "-v", "error", "-f", "mpegts",
+		"-show_entries", "stream=codec_type,codec_name", "-of", "json", "pipe:0")
+	cmd.Stdin = bytes.NewReader(seg)
+	out, err := cmd.Output()
+	if err != nil {
+		return Codecs{}, fmt.Errorf("codec probe: %w", err)
+	}
+	var raw struct {
+		Streams []struct {
+			CodecType string `json:"codec_type"`
+			CodecName string `json:"codec_name"`
+		} `json:"streams"`
+	}
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return Codecs{}, fmt.Errorf("codec probe: %w", err)
+	}
+	var c Codecs
+	for _, s := range raw.Streams {
+		switch {
+		case s.CodecType == "video" && c.Video == "":
+			c.Video = s.CodecName
+		case s.CodecType == "audio" && c.Audio == "":
+			c.Audio = s.CodecName
+		}
+	}
+	if c.Video == "" || c.Audio == "" {
+		return Codecs{}, fmt.Errorf("codec probe: video %q, audio %q in segment 1", c.Video, c.Audio)
+	}
+	return c, nil
 }
 
 // Track is one stream of the output file.
