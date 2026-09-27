@@ -13,7 +13,7 @@ import (
 	"github.com/vmorshc/hls-indexer/internal/testenv"
 )
 
-func TestWorkerConnectsToRedisAndIdles(t *testing.T) {
+func TestWorkerConnectsToRedis(t *testing.T) {
 	e := testenv.Start(t, testenv.Options{Worker: true})
 	deadline := time.Now().Add(5 * time.Second)
 	for {
@@ -33,7 +33,11 @@ func TestWorkerConnectsToRedisAndIdles(t *testing.T) {
 
 func TestWorkerStopsOnCancel(t *testing.T) {
 	testenv.Redis(t)
-	cfg := config.Config{Secrets: config.Secrets{RedisURL: config.Secret(testenv.RedisURL(t))}}
+	cfg, err := config.Load("", func(string) (string, bool) { return "", false })
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Secrets.RedisURL = config.Secret(testenv.RedisURL(t))
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- app.RunWorker(ctx, cfg, testenv.Logger(t)) }()

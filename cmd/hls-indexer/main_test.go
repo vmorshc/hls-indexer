@@ -89,7 +89,7 @@ func TestAPIStarts(t *testing.T) {
 
 func TestWorkerStarts(t *testing.T) {
 	testenv.Redis(t)
-	out := runRole(t, []string{"worker"}, map[string]string{"REDIS_URL": testenv.RedisURL(t)}, "worker idle")
+	out := runRole(t, []string{"worker"}, map[string]string{"REDIS_URL": testenv.RedisURL(t)}, "worker started")
 	if strings.Contains(out, testenv.RedisURL(t)) {
 		t.Errorf("redis url in logs:\n%s", out)
 	}

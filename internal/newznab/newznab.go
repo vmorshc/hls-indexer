@@ -134,7 +134,7 @@ func (h *Handler) get(w http.ResponseWriter, id string) {
 		writeError(w, ErrUnknownRelease, "No such item")
 		return
 	}
-	b, err := xml.Marshal(nzbDoc{NS: nzbNS, File: nzbFile{Subject: NZBSubjectPrefix + rid.String()}})
+	b, err := xml.Marshal(nzbDoc{NS: nzbNS, File: nzbFile{Subject: release.NZBSubjectPrefix + rid.String()}})
 	if err != nil {
 		http.Error(w, "encode nzb", http.StatusInternalServerError)
 		return
@@ -144,9 +144,6 @@ func (h *Handler) get(w http.ResponseWriter, id string) {
 	w.Write([]byte(xml.Header))
 	w.Write(b)
 }
-
-// NZBSubjectPrefix starts the only file subject of an HLS Indexer NZB.
-const NZBSubjectPrefix = "hls-indexer:"
 
 const nzbNS = "http://www.newzbin.com/DTD/2003/nzb"
 

@@ -19,7 +19,26 @@ type FakeUAKino struct {
 	requests []string
 	// Hide drops search hits whose link contains one of these title IDs.
 	Hide []string
+	// Segments serves every media playlist as the 3 real 480p fixture segments,
+	// so the worker can download and mux a stream.
+	Segments bool
 }
+
+// shortMedia lists the fixture segments with their probed media durations.
+// Their real EXTINF values differ by up to 2 s per segment.
+const shortMedia = `#EXTM3U
+#EXT-X-TARGETDURATION:9
+#EXT-X-PLAYLIST-TYPE:VOD
+#EXTINF:6.17,
+/content/stream/segment1.ts
+#EXTINF:5.00,
+/content/stream/segment2.ts
+#EXTINF:4.14,
+/content/stream/segment3.ts
+#EXT-X-ENDLIST
+`
+
+var segmentRe = regexp.MustCompile(`^/content/stream/(segment[1-3]\.ts)$`)
 
 // fakeSearch maps a search query to its fixture. Other queries find nothing.
 var fakeSearch = map[string]string{
@@ -99,7 +118,13 @@ func (f *FakeUAKino) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		f.serve(w, r, file, nil)
 	case strings.HasSuffix(p, ".m3u8") && regexp.MustCompile(`/hls/\d+/`).MatchString(p):
+		if f.Segments {
+			w.Write([]byte(shortMedia))
+			return
+		}
 		f.serve(w, r, "media-83766.m3u8", nil)
+	case f.Segments && segmentRe.MatchString(p):
+		http.ServeFile(w, r, filepath.Join(uakinoFixtures(), segmentRe.FindStringSubmatch(p)[1]))
 	case strings.HasSuffix(p, ".m3u8"):
 		f.serve(w, r, "master-83766.m3u8", nil)
 	default:

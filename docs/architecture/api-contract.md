@@ -47,9 +47,9 @@ The NZB carries no stream URLs, cookies or tokens.
 |---|---|
 | `version` | `{"version":"4.0.0"}` (emulated SAB version) |
 | `get_config`, `fullstatus`, `get_cats` | `complete_dir=/data/downloads`, categories `sonarr` and `radarr` with empty `dir`, sorting off, `history_retention_option=all` |
-| `addfile` | Multipart NZB. Accept only `hls-indexer:<releaseId>` and reject external XML entities. Persist the job, then return `{"status":true,"nzo_ids":["<jobId>"]}`. The same active release in the same category returns the existing `jobId`. `priority`: `-100` default, `-2` paused, `-1` low, `0` normal, `1` high, `2` force. |
-| `queue` | Filter param `category`, item field `cat`. Fields: `mb`, `mbleft` (MiB), `percentage`, `timeleft` (`H:MM:SS`). Status `Queued`, `Downloading` (covers resolve, download, mux and validate) or `Paused`. `limit=0` returns all. |
-| `history` | Item field `category`. Fields: `status` `Completed` or `Failed`, `fail_message`, `bytes`, `download_time` (s), `storage` = `/data/downloads/<jobId>`. Newest first. Filter by category before paging. |
+| `addfile` | Multipart NZB in field `name` (or `nzbfile`). Accept only one `hls-indexer:<releaseId>` file and reject any DTD or entity declaration with `Unknown release`. The upload file name without `.nzb` (or `nzbname`) becomes the output file name. Persist the job, then return `{"status":true,"nzo_ids":["<jobId>"]}`. The same active release in the same category returns the existing `jobId`. `priority`: `-100` default, `-2` paused, `-1` low, `0` normal, `1` high, `2` force. |
+| `queue` | Filter param `category`, item field `cat`. Paging `start`, `limit`. Fields: `mb`, `mbleft` (MiB), `percentage`, `timeleft` (`H:MM:SS`). Status `Queued`, `Downloading` (covers resolve, download, mux and validate) or `Paused`. `limit=0` returns all. |
+| `history` | Item field `category`. Fields: `nzo_id`, `name`, `status` `Completed` or `Failed`, `fail_message`, `bytes`, `download_time` (s), `storage` = `/data/downloads/<jobId>`. Newest first. Filter params `category` and `status` apply before paging (`start`, `limit`). |
 | `retry` | New job, fresh resolve. Returns `{"status":true,"nzo_id":"<newJobId>"}`. |
 | `queue&name=delete` | Stop the worker, drop the job. `del_files=1` deletes only this job's files. |
 | `history&name=delete` | `archive=1` archives the entry, `archive=0` deletes it. `del_files` touches only this job's folder. Deleting a job that is already gone succeeds. |

@@ -13,6 +13,10 @@ import (
 	"unicode"
 )
 
+// NZBSubjectPrefix starts the only file subject of an HLS Indexer NZB:
+// hls-indexer:<release ID>.
+const NZBSubjectPrefix = "hls-indexer:"
+
 // ID is a stateless release coordinate. Season and Episode are 0 for a movie.
 type ID struct {
 	Source  string

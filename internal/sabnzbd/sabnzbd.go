@@ -4,7 +4,10 @@ package sabnzbd
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"log/slog"
 	"net/http"
+
+	"github.com/vmorshc/hls-indexer/internal/jobs"
 )
 
 // Version is the emulated SABnzbd API version.
@@ -16,11 +19,15 @@ var Categories = []string{"sonarr", "radarr"}
 type Handler struct {
 	apiKey      string
 	completeDir string
+	jobs        *jobs.Store
+	hasSource   func(name string) bool
+	log         *slog.Logger
 }
 
-// New builds the handler. completeDir is paths.downloads.
-func New(apiKey, completeDir string) *Handler {
-	return &Handler{apiKey: apiKey, completeDir: completeDir}
+// New builds the handler. completeDir is paths.downloads. hasSource tells
+// whether a release ID prefix names a registered source.
+func New(apiKey, completeDir string, store *jobs.Store, hasSource func(string) bool, log *slog.Logger) *Handler {
+	return &Handler{apiKey: apiKey, completeDir: completeDir, jobs: store, hasSource: hasSource, log: log}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -42,6 +49,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"status": map[string]string{"completedir": h.completeDir}})
 	case "get_cats":
 		writeJSON(w, map[string]any{"categories": Categories})
+	case "addfile":
+		h.addfile(w, r)
+	case "queue":
+		h.queue(w, r)
+	case "history":
+		h.history(w, r)
 	default:
 		writeError(w, "not implemented")
 	}

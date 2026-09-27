@@ -13,9 +13,12 @@ import (
 
 	"github.com/vmorshc/hls-indexer/internal/catalog"
 	"github.com/vmorshc/hls-indexer/internal/config"
+	"github.com/vmorshc/hls-indexer/internal/downloader"
+	"github.com/vmorshc/hls-indexer/internal/jobs"
 	"github.com/vmorshc/hls-indexer/internal/metadata/tmdb"
 	"github.com/vmorshc/hls-indexer/internal/newznab"
 	"github.com/vmorshc/hls-indexer/internal/sabnzbd"
+	"github.com/vmorshc/hls-indexer/internal/source"
 	"github.com/vmorshc/hls-indexer/internal/source/uakino"
 )
 
@@ -23,7 +26,7 @@ import (
 const WorkerClientName = "hls-indexer-worker"
 
 // NewAPI builds the handler for /indexer/api and /downloader/api. rdb caches
-// TMDb responses. A nil rdb disables the cache.
+// TMDb responses and holds jobs. A nil rdb disables the cache and the job modes.
 func NewAPI(cfg config.Config, rdb *redis.Client, log *slog.Logger) (http.Handler, error) {
 	var errs []error
 	if cfg.Secrets.IndexerAPIKey == "" {
@@ -32,12 +35,7 @@ func NewAPI(cfg config.Config, rdb *redis.Client, log *slog.Logger) (http.Handle
 	if cfg.Secrets.DownloaderAPIKey == "" {
 		errs = append(errs, errors.New("DOWNLOADER_API_KEY is required"))
 	}
-	ua, err := uakino.New(uakino.Options{
-		BaseURL:     cfg.UAKino.BaseURL,
-		RPS:         cfg.UAKino.RPS,
-		ProxyURL:    cfg.Secrets.UAKinoProxyURL.Reveal(),
-		PlayerHosts: cfg.UAKino.PlayerHosts,
-	})
+	ua, err := newUAKino(cfg)
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -47,8 +45,21 @@ func NewAPI(cfg config.Config, rdb *redis.Client, log *slog.Logger) (http.Handle
 	cat := catalog.New(tmdb.New(cfg.TMDb.BaseURL, cfg.Secrets.TMDbAPIKey.Reveal(), rdb), ua)
 	mux := http.NewServeMux()
 	mux.Handle("/indexer/api", newznab.New(cfg.Secrets.IndexerAPIKey.Reveal(), cfg.HTTP.PublicURL, cat, log))
-	mux.Handle("/downloader/api", sabnzbd.New(cfg.Secrets.DownloaderAPIKey.Reveal(), cfg.Paths.Downloads))
+	var store *jobs.Store
+	if rdb != nil {
+		store = jobs.New(rdb)
+	}
+	mux.Handle("/downloader/api", sabnzbd.New(cfg.Secrets.DownloaderAPIKey.Reveal(), cfg.Paths.Downloads, store, cat.HasSource, log))
 	return mux, nil
+}
+
+func newUAKino(cfg config.Config) (*uakino.Client, error) {
+	return uakino.New(uakino.Options{
+		BaseURL:     cfg.UAKino.BaseURL,
+		RPS:         cfg.UAKino.RPS,
+		ProxyURL:    cfg.Secrets.UAKinoProxyURL.Reveal(),
+		PlayerHosts: cfg.UAKino.PlayerHosts,
+	})
 }
 
 // APIClientName is the Redis client name of the api connection.
@@ -84,17 +95,37 @@ func RunAPI(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	return srv.Shutdown(shutdown)
 }
 
-// RunWorker connects to Redis and idles until ctx ends. Job processing comes later.
+// RunWorker connects to Redis and processes jobs until ctx ends.
 func RunWorker(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 	rdb, err := Redis(ctx, cfg, WorkerClientName)
 	if err != nil {
 		return err
 	}
 	defer rdb.Close()
-	log.Info("worker idle", "jobs", cfg.Worker.Jobs)
-	<-ctx.Done()
+	ua, err := newUAKino(cfg)
+	if err != nil {
+		return err
+	}
+	w := &downloader.Worker{
+		Jobs:       jobs.New(rdb),
+		Sources:    []source.Source{ua},
+		Incomplete: cfg.Paths.Incomplete,
+		Downloads:  cfg.Paths.Downloads,
+		Parallel:   cfg.Worker.Jobs,
+		Pipeline: downloader.Pipeline{
+			HTTP:        &http.Client{Timeout: 2 * time.Minute},
+			Concurrency: cfg.Worker.SegmentConcurrency,
+			Attempts:    5,
+			Backoff:     time.Second,
+			FFmpeg:      "ffmpeg",
+			FFprobe:     "ffprobe",
+		},
+		Log: log,
+	}
+	log.Info("worker started", "jobs", cfg.Worker.Jobs)
+	err = w.Run(ctx)
 	log.Info("worker stopped")
-	return nil
+	return err
 }
 
 // Redis connects to REDIS_URL and pings it. Errors never include the URL.

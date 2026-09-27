@@ -103,7 +103,7 @@ Tests that need Redis use the separate test Redis from compose and flush it befo
 docker compose up -d redis-test                        # test Redis on localhost:6380
 export TEST_REDIS_URL=redis://localhost:6380/0
 go test ./...                                          # unit, fixture and snapshot tests
-go test ./... -update                                  # rewrite golden files
+go test ./internal/downloader -update                   # rewrite golden files
 UAKINO_LIVE=1 go test ./internal/source/uakino/...     # live UAKino, overwrites fixtures
 ```
 

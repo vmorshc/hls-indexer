@@ -11,5 +11,15 @@ Redis is the only store. Every key uses the prefix `hls-indexer:`. Compose runs 
 | Source cache | `internal/source/<name>` | source policy, see [UAKino cache](../uakino/rules.md#cache) |
 | TMDb: ID → titles, year, season episode lists | `internal/metadata/tmdb` | 1 month |
 
+Job keys (`internal/jobs`):
+
+| Key | Type | Holds |
+|---|---|---|
+| `hls-indexer:job:<jobId>` | hash | job fields |
+| `hls-indexer:queue` | zset | pending job IDs, score = −priority × 10¹³ + created ms |
+| `hls-indexer:active` | zset | queued and running job IDs, score = created ms |
+| `hls-indexer:dedup:<category>:<releaseId>` | string | active job ID |
+| `hls-indexer:history` | zset | finished job IDs, score = finished ms |
+
 - Releases and search results are never stored. The release ID carries everything the worker needs.
 - Only the worker writes progress and terminal status. The API writes job creation, pause/resume and deletes.

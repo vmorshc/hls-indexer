@@ -82,4 +82,18 @@ type Source interface {
 	Title(ctx context.Context, titleID string) (Title, error)
 	// Sample reads the best variant of an episode: resolution, bandwidth, duration.
 	Sample(ctx context.Context, ep Episode) (Media, error)
+	// Resolve returns the master playlist URL and subtitle tracks of an episode.
+	Resolve(ctx context.Context, ep Episode) (Stream, error)
+}
+
+// Stream is a playable episode: the HLS master playlist and its subtitles.
+type Stream struct {
+	Master    string // absolute URL
+	Subtitles []Subtitle
+}
+
+// Subtitle is one external subtitle track.
+type Subtitle struct {
+	Label string
+	URL   string
 }

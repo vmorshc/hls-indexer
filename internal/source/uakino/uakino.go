@@ -88,6 +88,31 @@ func (c *Client) Title(ctx context.Context, titleID string) (source.Title, error
 	return t, nil
 }
 
+// Resolve reads the player page: master playlist URL and subtitles.
+func (c *Client) Resolve(ctx context.Context, ep source.Episode) (source.Stream, error) {
+	body, final, err := c.getPlayer(ctx, ep.Locator)
+	if err != nil {
+		return source.Stream{}, err
+	}
+	p, err := parsePlayer(body)
+	if err != nil {
+		return source.Stream{}, fmt.Errorf("%w: %v", source.ErrUnavailable, err)
+	}
+	s := source.Stream{Master: absURL(final, p.File)}
+	for _, sub := range p.Subtitles {
+		s.Subtitles = append(s.Subtitles, source.Subtitle{Label: sub.Label, URL: absURL(final, sub.URL)})
+	}
+	return s, nil
+}
+
+func absURL(base *url.URL, ref string) string {
+	u, err := url.Parse(ref)
+	if err != nil {
+		return ref
+	}
+	return base.ResolveReference(u).String()
+}
+
 // Sample reads the player page, the master playlist and the best variant's
 // media playlist.
 func (c *Client) Sample(ctx context.Context, ep source.Episode) (source.Media, error) {
