@@ -165,7 +165,7 @@ func TestMuxFailsOnDurationMismatch(t *testing.T) {
 	}
 }
 
-func TestMuxFailsOnMissingSubtitle(t *testing.T) {
+func TestSubtitlesFailsOnMissingVTT(t *testing.T) {
 	needFFmpeg(t)
 	srv, _ := segmentServer(t, 0)
 	subs := serverSubs(srv)

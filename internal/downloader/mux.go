@@ -69,6 +69,10 @@ func (p Pipeline) Mux(ctx context.Context, m hls.Media, subs []Subtitle, out str
 	for range subs {
 		r, w, err := os.Pipe()
 		if err != nil {
+			stdin.Close()
+			for _, r := range cmd.ExtraFiles {
+				r.Close()
+			}
 			return err
 		}
 		cmd.ExtraFiles = append(cmd.ExtraFiles, r)
