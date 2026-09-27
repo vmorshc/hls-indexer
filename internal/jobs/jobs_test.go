@@ -45,15 +45,11 @@ func noClaim(t *testing.T, s *jobs.Store) {
 func TestPriorityIsStored(t *testing.T) {
 	ctx := context.Background()
 	s := jobs.New(testenv.Redis(t))
-	for i, p := range []int{jobs.PriorityPaused, jobs.PriorityLow, jobs.PriorityNormal, jobs.PriorityHigh, jobs.PriorityForce} {
+	for i, p := range []int{jobs.PriorityDefault, jobs.PriorityPaused, jobs.PriorityLow, jobs.PriorityNormal, jobs.PriorityHigh, jobs.PriorityForce} {
 		id, _ := s.Add(ctx, "r"+string(rune('a'+i)), "t", "sonarr", p)
 		if j := status(t, s, id); j.Priority != p {
 			t.Errorf("priority %d stored as %d", p, j.Priority)
 		}
-	}
-	id, _ := s.Add(ctx, "rz", "t", "sonarr", jobs.PriorityDefault)
-	if j := status(t, s, id); j.Priority != jobs.PriorityNormal {
-		t.Errorf("default stored as %d", j.Priority)
 	}
 }
 
@@ -136,6 +132,27 @@ func TestPauseRunningJobStopsItsRun(t *testing.T) {
 		t.Fatalf("progress %+v", j)
 	}
 	complete(t, s, cur, 1)
+	complete(t, s, cur, 1) // retry after a lost reply
+	if ok, _ := s.Fail(ctx, old, "boom"); ok {
+		t.Fatal("old run failed a finished job")
+	}
+}
+
+// A job resumed while the worker starts keeps the score of its new priority.
+func TestRequeueKeepsResumedScore(t *testing.T) {
+	ctx := context.Background()
+	s := jobs.New(testenv.Redis(t))
+	low, _ := s.Add(ctx, "r1", "t", "sonarr", jobs.PriorityLow)
+	id, _ := s.Add(ctx, "r2", "t", "sonarr", jobs.PriorityPaused)
+	s.Resume(ctx, id)
+	if err := s.Requeue(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{id, low} {
+		if j := claim(t, s); j.ID != want {
+			t.Fatalf("claimed %s, want %s", j.ID, want)
+		}
+	}
 }
 
 func TestPauseResumeNeedActiveJob(t *testing.T) {
@@ -177,6 +194,7 @@ func TestAddDedupsActiveReleasePerCategory(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := s.Add(ctx, "uakino:1-a:movie:00000000", "A", "radarr", jobs.PriorityDefault)
+	time.Sleep(2 * time.Millisecond)
 	c, _ := s.Add(ctx, "uakino:1-a:movie:00000000", "A", "sonarr", jobs.PriorityDefault)
 	if a != b || a == c || !strings.HasPrefix(a, "hls_") {
 		t.Fatalf("ids %s %s %s", a, b, c)

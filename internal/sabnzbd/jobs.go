@@ -134,7 +134,7 @@ func jobTitle(name string, rid release.ID) string {
 }
 
 var priorities = map[int]string{
-	jobs.PriorityPaused: "Paused", jobs.PriorityLow: "Low", jobs.PriorityNormal: "Normal",
+	jobs.PriorityDefault: "Normal", jobs.PriorityPaused: "Paused", jobs.PriorityLow: "Low", jobs.PriorityNormal: "Normal",
 	jobs.PriorityHigh: "High", jobs.PriorityForce: "Force",
 }
 
@@ -202,22 +202,20 @@ func (h *Handler) queue(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"queue": map[string]any{"paused": false, "noofslots": total, "slots": slots}})
 }
 
-// control pauses or resumes the jobs in value (comma list).
+// control pauses or resumes the job in value.
 func (h *Handler) control(w http.ResponseWriter, r *http.Request, do func(context.Context, string) error) {
-	ids := strings.Split(r.FormValue("value"), ",")
-	for _, id := range ids {
-		err := do(r.Context(), id)
-		if errors.Is(err, jobs.ErrNotFound) {
-			writeError(w, "Unknown job")
-			return
-		}
-		if err != nil {
-			h.log.Error("queue control", "err", err)
-			http.Error(w, "job store unavailable", http.StatusServiceUnavailable)
-			return
-		}
+	id := r.FormValue("value")
+	err := do(r.Context(), id)
+	if errors.Is(err, jobs.ErrNotFound) {
+		writeError(w, "Unknown job")
+		return
 	}
-	writeJSON(w, map[string]any{"status": true, "nzo_ids": ids})
+	if err != nil {
+		h.log.Error("queue control", "err", err)
+		http.Error(w, "job store unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	writeJSON(w, map[string]any{"status": true, "nzo_ids": []string{id}})
 }
 
 func mib(b float64) string { return fmt.Sprintf("%.2f", b/(1<<20)) }

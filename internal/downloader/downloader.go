@@ -4,7 +4,6 @@
 package downloader
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -34,9 +33,6 @@ type Worker struct {
 	Parallel int
 	Pipeline Pipeline
 	Log      *slog.Logger
-	// Watch is how often a run checks that its job is still Downloading.
-	// Zero means 1 s.
-	Watch time.Duration
 
 	mu      sync.Mutex
 	running map[string]chan struct{} // job ID → closed when its run ends
@@ -44,6 +40,9 @@ type Worker struct {
 
 // claimWait bounds one blocking claim so the worker notices ctx cancel.
 const claimWait = time.Second
+
+// watchEvery is how often a run checks that its job is still Downloading.
+const watchEvery = time.Second
 
 // errStopped cancels a run whose job the API paused or dropped.
 var errStopped = errors.New("job stopped")
@@ -75,7 +74,10 @@ func (w *Worker) loop(ctx context.Context) {
 		}
 		if ok {
 			done := w.exclusive(j.ID)
-			w.run(ctx, j)
+			// A newer claim may have taken the job while this one waited.
+			if cur, err := w.Jobs.Current(ctx, j); err != nil || cur {
+				w.run(ctx, j)
+			}
 			done()
 		}
 	}
@@ -160,7 +162,7 @@ func (w *Worker) stopped(ctx context.Context, log *slog.Logger, j jobs.Job, stag
 // watch cancels the run with errStopped once its job is no longer Downloading
 // under this run. Redis errors are ignored: the next tick checks again.
 func (w *Worker) watch(ctx context.Context, j jobs.Job, stop context.CancelCauseFunc) {
-	t := time.NewTicker(cmp.Or(w.Watch, time.Second))
+	t := time.NewTicker(watchEvery)
 	defer t.Stop()
 	for {
 		select {

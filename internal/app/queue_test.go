@@ -2,9 +2,11 @@ package app_test
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +17,7 @@ import (
 	"time"
 
 	"github.com/vmorshc/hls-indexer/internal/config"
+	"github.com/vmorshc/hls-indexer/internal/hls"
 	"github.com/vmorshc/hls-indexer/internal/jobs"
 	"github.com/vmorshc/hls-indexer/internal/testenv"
 )
@@ -224,10 +227,16 @@ func TestProgressPauseResume(t *testing.T) {
 
 	s := waitSlot(t, e.Env, a, func(s map[string]any) bool { return s["percentage"] == "66" && s["timeleft"] != "0:00:00" })
 	written := len(segmentFixture(t, "segment1.ts")) + len(segmentFixture(t, "segment2.ts"))
-	mb, _ := strconv.ParseFloat(s["mb"].(string), 64)
-	left, _ := strconv.ParseFloat(s["mbleft"].(string), 64)
-	if wantLeft := math.Max(mb-float64(written)/(1<<20), 0); mb <= 0 || math.Abs(left-wantLeft) > 0.01 {
-		t.Errorf("mb %v mbleft %v, want mbleft %.2f", s["mb"], s["mbleft"], wantLeft)
+	// Size estimate: best variant BANDWIDTH × total EXTINF / 8.
+	vs, err := hls.ParseMaster(string(segmentFixture(t, "master-83766.m3u8")), &url.URL{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	size := float64(hls.Best(vs).Bandwidth) * (6.17 + 5.00 + 4.14) / 8
+	wantMB := fmt.Sprintf("%.2f", size/(1<<20))
+	wantLeft := fmt.Sprintf("%.2f", math.Max(size-float64(written), 0)/(1<<20))
+	if s["mb"] != wantMB || s["mbleft"] != wantLeft {
+		t.Errorf("mb %v mbleft %v, want %s %s", s["mb"], s["mbleft"], wantMB, wantLeft)
 	}
 	if !clock.MatchString(s["timeleft"].(string)) || s["status"] != "Downloading" {
 		t.Errorf("slot %v", s)

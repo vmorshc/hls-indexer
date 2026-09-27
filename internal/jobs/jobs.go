@@ -92,7 +92,7 @@ redis.call('ZADD', KEYS[4], ARGV[3], ARGV[1])
 return ARGV[1]
 `)
 
-// Add persists a new job and enqueues it. Priority -100 is stored as normal.
+// Add persists a new job and enqueues it. Priority -100 orders as normal.
 // Priority -2 stores the job Paused and out of the queue until Resume. When the
 // same release is already active in the same category it returns the existing
 // job ID.
@@ -100,9 +100,6 @@ func (s *Store) Add(ctx context.Context, rel, title, category string, priority i
 	id, err := newID()
 	if err != nil {
 		return "", err
-	}
-	if priority == PriorityDefault {
-		priority = PriorityNormal
 	}
 	now := s.now()
 	status, score := Queued, any(queueScore(priority, now))
@@ -174,7 +171,11 @@ func (s *Store) Resume(ctx context.Context, id string) error {
 }
 
 // queueScore orders the queue: higher priority first, then oldest first.
+// Default priority orders as normal.
 func queueScore(priority int, created time.Time) float64 {
+	if priority == PriorityDefault {
+		priority = PriorityNormal
+	}
 	return float64(-int64(priority)*1e13 + created.UnixMilli())
 }
 
@@ -206,7 +207,7 @@ func (s *Store) Claim(ctx context.Context, wait time.Duration) (Job, bool, error
 		return Job{}, false, err
 	}
 	id := res.Member.(string)
-	err = claimScript.Run(ctx, s.rdb, []string{jobKey(id)}, s.now().UnixMilli()).Err()
+	run, err := claimScript.Run(ctx, s.rdb, []string{jobKey(id)}, s.now().UnixMilli()).Int64()
 	if errors.Is(err, redis.Nil) {
 		return Job{}, false, nil
 	}
@@ -214,13 +215,17 @@ func (s *Store) Claim(ctx context.Context, wait time.Duration) (Job, bool, error
 		return Job{}, false, err
 	}
 	j, err := s.Get(ctx, id)
+	j.Run = run // the job may have been claimed again since
 	return j, err == nil, err
 }
 
 // requeueScript queues a Downloading or Queued job again with score ARGV[2].
+// ARGV[3] is the priority the score came from. A resume in between changes
+// it, and the resumed job keeps its own score.
 var requeueScript = redis.NewScript(`
 local st = redis.call('HGET', KEYS[1], 'status')
 if st ~= 'Downloading' and st ~= 'Queued' then return 0 end
+if redis.call('HGET', KEYS[1], 'priority') ~= ARGV[3] then return 0 end
 redis.call('HSET', KEYS[1], 'status', 'Queued', 'segments_done', 0, 'bytes_done', 0)
 redis.call('ZADD', KEYS[2], ARGV[2], ARGV[1])
 return 1
@@ -236,7 +241,7 @@ func (s *Store) Requeue(ctx context.Context) error {
 	}
 	for _, j := range active {
 		err := requeueScript.Run(ctx, s.rdb, []string{jobKey(j.ID), queueKey},
-			j.ID, queueScore(j.Priority, j.Created)).Err()
+			j.ID, queueScore(j.Priority, j.Created), j.Priority).Err()
 		if err != nil {
 			return err
 		}
@@ -244,7 +249,8 @@ func (s *Store) Requeue(ctx context.Context) error {
 	return nil
 }
 
-// setRunScript writes job fields only while run ARGV[1] is current.
+// setRunScript writes job fields only while run ARGV[1] is current. A paused
+// job keeps its run, so the stopped run can reset its progress.
 var setRunScript = redis.NewScript(`
 if redis.call('HGET', KEYS[1], 'run') ~= ARGV[1] then return 0 end
 redis.call('HSET', KEYS[1], unpack(ARGV, 2))
@@ -277,7 +283,8 @@ func (s *Store) Current(ctx context.Context, j Job) (bool, error) {
 }
 
 // Complete moves the job to history as Completed. ok is false when the run is
-// no longer current (paused, resumed or deleted) and nothing changed.
+// no longer current (paused, resumed or deleted) and nothing changed. A retry
+// after a lost reply reports ok.
 func (s *Store) Complete(ctx context.Context, j Job, storage string, bytes int64) (ok bool, err error) {
 	return s.finish(ctx, j, "status", Completed, "storage", storage, "bytes", bytes)
 }
@@ -287,11 +294,13 @@ func (s *Store) Fail(ctx context.Context, j Job, message string) (ok bool, err e
 	return s.finish(ctx, j, "status", Failed, "fail_message", message)
 }
 
-// finishScript moves a job to history if run ARGV[1] is the live run.
+// finishScript moves a job to history if run ARGV[1] is the live run. A job
+// this run already finished reports success, so a retried call is safe.
 var finishScript = redis.NewScript(`
-if redis.call('HGET', KEYS[1], 'status') ~= 'Downloading' or redis.call('HGET', KEYS[1], 'run') ~= ARGV[1] then
-  return 0
-end
+if redis.call('HGET', KEYS[1], 'run') ~= ARGV[1] then return 0 end
+local st = redis.call('HGET', KEYS[1], 'status')
+if st == 'Completed' or st == 'Failed' then return 1 end
+if st ~= 'Downloading' then return 0 end
 redis.call('HSET', KEYS[1], unpack(ARGV, 4))
 redis.call('ZREM', KEYS[2], ARGV[2])
 redis.call('ZREM', KEYS[3], ARGV[2])
