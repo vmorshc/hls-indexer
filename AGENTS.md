@@ -53,4 +53,4 @@ internal/downloader/      HLS → MKV worker
 
 ### Issue tracker
 
-Issues are tracked in GitHub Issues (`vmorshc/hls-indexer`) via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues are tracked in GitHub Issues (`vmorshc/hls-indexer`) via the `gh` CLI. **ALWAYS** see `docs/agents/issue-tracker.md` if you work with issues.
