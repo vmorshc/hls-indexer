@@ -119,6 +119,11 @@ func RunWorker(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 			Backoff:     time.Second,
 			FFmpeg:      "ffmpeg",
 			FFprobe:     "ffprobe",
+			Encode: downloader.Encode{
+				Preset:       cfg.Worker.X264Preset,
+				CRF:          cfg.Worker.X264CRF,
+				AudioBitrate: cfg.Worker.AACBitrate,
+			},
 		},
 		Log: log,
 	}

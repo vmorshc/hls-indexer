@@ -10,6 +10,10 @@ paths:
 worker:
   jobs: 1
   segment_concurrency: 8
+  # Re-encode for sources that are not H.264 video or AAC audio.
+  x264_preset: "veryfast"
+  x264_crf: 20
+  aac_bitrate: "192k"
 uakino:
   base_url: "https://uakino.best"
   rps: 1

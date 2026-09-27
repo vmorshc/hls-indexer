@@ -67,7 +67,7 @@ func (p Pipeline) Mux(ctx context.Context, m hls.Media, subs []Subtitle, out str
 	}
 
 	var stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, p.FFmpeg, muxArgs(codecs, subs, out)...)
+	cmd := exec.CommandContext(ctx, p.FFmpeg, muxArgs(codecs.args(p.Encode), subs, out)...)
 	cmd.Stderr = &limitedWriter{buf: &stderr, max: 4096}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
@@ -136,8 +136,8 @@ func (p Pipeline) Mux(ctx context.Context, m hls.Media, subs []Subtitle, out str
 }
 
 // muxArgs maps the first video and audio track of pipe:0 and one SRT track
-// per subtitle pipe. Codecs decides copy or re-encode for video and audio.
-func muxArgs(c Codecs, subs []Subtitle, out string) []string {
+// per subtitle pipe. codec holds the video and audio codec args.
+func muxArgs(codec []string, subs []Subtitle, out string) []string {
 	args := []string{"-hide_banner", "-nostdin", "-loglevel", "error", "-f", "mpegts", "-i", "pipe:0"}
 	for i := range subs {
 		args = append(args, "-f", "srt", "-i", fmt.Sprintf("pipe:%d", i+3))
@@ -146,7 +146,7 @@ func muxArgs(c Codecs, subs []Subtitle, out string) []string {
 	for i := range subs {
 		args = append(args, "-map", fmt.Sprintf("%d:s:0", i+1))
 	}
-	args = append(args, c.args()...)
+	args = append(args, codec...)
 	args = append(args, "-c:s", "copy", "-metadata:s:a:0", "language=ukr")
 	for i, s := range subs {
 		if s.Language != "" {
@@ -183,6 +183,7 @@ func (p Pipeline) feed(ctx context.Context, m hls.Media, first []byte, w interfa
 			}
 			if i == 0 {
 				slots[0] <- result{first, nil}
+				first = nil // only the slot holds it now
 				continue
 			}
 			go func() {
@@ -239,19 +240,26 @@ type Codecs struct {
 	Video, Audio string
 }
 
+// Encode is the re-encode setting: worker.x264_preset, worker.x264_crf, worker.aac_bitrate.
+type Encode struct {
+	Preset       string
+	CRF          int
+	AudioBitrate string
+}
+
 // args stream-copies H.264 video and AAC audio and re-encodes anything else
 // to H.264 (yuv420p, 8-bit, plays everywhere) and AAC.
-func (c Codecs) args() []string {
+func (c Codecs) args(e Encode) []string {
 	var a []string
 	if c.Video == "h264" {
 		a = append(a, "-c:v", "copy")
 	} else {
-		a = append(a, "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p")
+		a = append(a, "-c:v", "libx264", "-preset", e.Preset, "-crf", strconv.Itoa(e.CRF), "-pix_fmt", "yuv420p")
 	}
 	if c.Audio == "aac" {
 		a = append(a, "-c:a", "copy")
 	} else {
-		a = append(a, "-c:a", "aac", "-b:a", "192k")
+		a = append(a, "-c:a", "aac", "-b:a", e.AudioBitrate)
 	}
 	return a
 }

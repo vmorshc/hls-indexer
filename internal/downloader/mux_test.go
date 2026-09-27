@@ -56,7 +56,7 @@ func needFFmpeg(t *testing.T) {
 }
 
 func testPipeline(srv *httptest.Server) Pipeline {
-	return Pipeline{HTTP: srv.Client(), Concurrency: 3, Attempts: 3, Backoff: time.Millisecond, FFmpeg: "ffmpeg", FFprobe: "ffprobe"}
+	return Pipeline{HTTP: srv.Client(), Concurrency: 3, Attempts: 3, Backoff: time.Millisecond, FFmpeg: "ffmpeg", FFprobe: "ffprobe", Encode: testEncode}
 }
 
 // Short WebVTT fixtures with cues inside the 3 segments.
@@ -231,6 +231,8 @@ func TestValidate(t *testing.T) {
 	}
 }
 
+var testEncode = Encode{Preset: "veryfast", CRF: 20, AudioBitrate: "192k"}
+
 func TestCodecArgs(t *testing.T) {
 	tests := []struct {
 		in   Codecs
@@ -242,7 +244,7 @@ func TestCodecArgs(t *testing.T) {
 		{Codecs{"hevc", "aac"}, "-c:v libx264 -preset veryfast -crf 20 -pix_fmt yuv420p -c:a copy"},
 	}
 	for _, tt := range tests {
-		if got := strings.Join(tt.in.args(), " "); got != tt.want {
+		if got := strings.Join(tt.in.args(testEncode), " "); got != tt.want {
 			t.Errorf("%v: got %q, want %q", tt.in, got, tt.want)
 		}
 	}

@@ -35,7 +35,7 @@ func TestLoadDefaults(t *testing.T) {
 	want := Config{
 		HTTP:   HTTP{Addr: ":8080", PublicURL: "http://localhost:8080"},
 		Paths:  Paths{Incomplete: "/data/incomplete", Downloads: "/data/downloads"},
-		Worker: Worker{Jobs: 1, SegmentConcurrency: 8},
+		Worker: Worker{Jobs: 1, SegmentConcurrency: 8, X264Preset: "veryfast", X264CRF: 20, AACBitrate: "192k"},
 		UAKino: UAKino{BaseURL: "https://uakino.best", RPS: 1, PlayerHosts: []string{"ashdi.vip"}},
 		TMDb:   TMDb{BaseURL: "https://api.themoviedb.org/3"},
 	}
@@ -83,6 +83,9 @@ func TestLoadLayers(t *testing.T) {
 				"DOWNLOADS_DIR":       "/d",
 				"WORKER_JOBS":         "2",
 				"SEGMENT_CONCURRENCY": "4",
+				"X264_PRESET":         "slow",
+				"X264_CRF":            "23",
+				"AAC_BITRATE":         "128k",
 				"UAKINO_BASE_URL":     "http://ua",
 				"UAKINO_RPS":          "0.5",
 				"UAKINO_PLAYER_HOSTS": "a.test, b.test",
@@ -92,7 +95,7 @@ func TestLoadLayers(t *testing.T) {
 				want := Config{
 					HTTP:   HTTP{Addr: ":1", PublicURL: "http://pub"},
 					Paths:  Paths{Incomplete: "/i", Downloads: "/d"},
-					Worker: Worker{Jobs: 2, SegmentConcurrency: 4},
+					Worker: Worker{Jobs: 2, SegmentConcurrency: 4, X264Preset: "slow", X264CRF: 23, AACBitrate: "128k"},
 					UAKino: UAKino{BaseURL: "http://ua", RPS: 0.5, PlayerHosts: []string{"a.test", "b.test"}},
 					TMDb:   TMDb{BaseURL: "http://tmdb"},
 				}

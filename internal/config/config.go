@@ -38,6 +38,10 @@ type Paths struct {
 type Worker struct {
 	Jobs               int `yaml:"jobs"`
 	SegmentConcurrency int `yaml:"segment_concurrency"`
+	// Re-encode settings for sources that are not H.264 or AAC.
+	X264Preset string `yaml:"x264_preset"`
+	X264CRF    int    `yaml:"x264_crf"`
+	AACBitrate string `yaml:"aac_bitrate"`
 }
 
 type UAKino struct {
@@ -84,6 +88,9 @@ func (c Config) LogValue() slog.Value {
 		slog.String("paths.downloads", c.Paths.Downloads),
 		slog.Int("worker.jobs", c.Worker.Jobs),
 		slog.Int("worker.segment_concurrency", c.Worker.SegmentConcurrency),
+		slog.String("worker.x264_preset", c.Worker.X264Preset),
+		slog.Int("worker.x264_crf", c.Worker.X264CRF),
+		slog.String("worker.aac_bitrate", c.Worker.AACBitrate),
 		slog.String("uakino.base_url", c.UAKino.BaseURL),
 		slog.Float64("uakino.rps", c.UAKino.RPS),
 		slog.String("uakino.player_hosts", strings.Join(c.UAKino.PlayerHosts, ",")),
@@ -131,6 +138,8 @@ func applyEnv(c *Config, lookupEnv func(string) (string, bool)) error {
 		"DOWNLOADS_DIR":   &c.Paths.Downloads,
 		"UAKINO_BASE_URL": &c.UAKino.BaseURL,
 		"TMDB_BASE_URL":   &c.TMDb.BaseURL,
+		"X264_PRESET":     &c.Worker.X264Preset,
+		"AAC_BITRATE":     &c.Worker.AACBitrate,
 	}
 	for k, p := range strs {
 		if v, ok := lookupEnv(k); ok {
@@ -140,6 +149,7 @@ func applyEnv(c *Config, lookupEnv func(string) (string, bool)) error {
 	ints := map[string]*int{
 		"WORKER_JOBS":         &c.Worker.Jobs,
 		"SEGMENT_CONCURRENCY": &c.Worker.SegmentConcurrency,
+		"X264_CRF":            &c.Worker.X264CRF,
 	}
 	for k, p := range ints {
 		if v, ok := lookupEnv(k); ok {
@@ -182,6 +192,12 @@ func (c Config) validate() error {
 	}
 	if c.Worker.SegmentConcurrency < 1 {
 		errs = append(errs, errors.New("worker.segment_concurrency must be at least 1"))
+	}
+	if c.Worker.X264Preset == "" || c.Worker.AACBitrate == "" {
+		errs = append(errs, errors.New("worker.x264_preset and worker.aac_bitrate must be set"))
+	}
+	if c.Worker.X264CRF < 0 || c.Worker.X264CRF > 51 {
+		errs = append(errs, errors.New("worker.x264_crf must be 0 to 51"))
 	}
 	if c.UAKino.RPS <= 0 {
 		errs = append(errs, errors.New("uakino.rps must be positive"))

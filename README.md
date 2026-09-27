@@ -75,6 +75,9 @@ Settings:
 | `paths.downloads` | `DOWNLOADS_DIR` | `/data/downloads` |
 | `worker.jobs` | `WORKER_JOBS` | `1` |
 | `worker.segment_concurrency` | `SEGMENT_CONCURRENCY` | `8` |
+| `worker.x264_preset` | `X264_PRESET` | `veryfast` (re-encode of non-H.264 video) |
+| `worker.x264_crf` | `X264_CRF` | `20` |
+| `worker.aac_bitrate` | `AAC_BITRATE` | `192k` (re-encode of non-AAC audio) |
 | `uakino.base_url` | `UAKINO_BASE_URL` | `https://uakino.best` |
 | `uakino.rps` | `UAKINO_RPS` | `1` |
 | `uakino.player_hosts` | `UAKINO_PLAYER_HOSTS` (comma list) | `[ashdi.vip]` (inline movie players, subdomains included) |

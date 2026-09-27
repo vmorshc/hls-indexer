@@ -249,6 +249,7 @@ type Pipeline struct {
 	Backoff  time.Duration
 	FFmpeg   string
 	FFprobe  string
+	Encode   Encode
 }
 
 // Playlist reads the master playlist, picks the best variant and reads its media playlist.
