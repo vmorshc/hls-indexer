@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"strconv"
+	"strings"
 
 	"go.yaml.in/yaml/v4"
 
@@ -40,8 +41,9 @@ type Worker struct {
 }
 
 type UAKino struct {
-	BaseURL string  `yaml:"base_url"`
-	RPS     float64 `yaml:"rps"`
+	BaseURL     string   `yaml:"base_url"`
+	RPS         float64  `yaml:"rps"`
+	PlayerHosts []string `yaml:"player_hosts"`
 }
 
 type TMDb struct {
@@ -84,6 +86,7 @@ func (c Config) LogValue() slog.Value {
 		slog.Int("worker.segment_concurrency", c.Worker.SegmentConcurrency),
 		slog.String("uakino.base_url", c.UAKino.BaseURL),
 		slog.Float64("uakino.rps", c.UAKino.RPS),
+		slog.String("uakino.player_hosts", strings.Join(c.UAKino.PlayerHosts, ",")),
 		slog.String("tmdb.base_url", c.TMDb.BaseURL),
 	)
 }
@@ -146,6 +149,9 @@ func applyEnv(c *Config, lookupEnv func(string) (string, bool)) error {
 			}
 			*p = n
 		}
+	}
+	if v, ok := lookupEnv("UAKINO_PLAYER_HOSTS"); ok {
+		c.UAKino.PlayerHosts = strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ' ' })
 	}
 	if v, ok := lookupEnv("UAKINO_RPS"); ok {
 		f, err := strconv.ParseFloat(v, 64)

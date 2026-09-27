@@ -79,7 +79,7 @@ func TestAPIRequiresKeys(t *testing.T) {
 		{DownloaderAPIKey: "d"},
 		{IndexerAPIKey: "i"},
 	} {
-		if _, err := app.NewAPI(config.Config{Secrets: s}); err == nil {
+		if _, err := app.NewAPI(config.Config{Secrets: s}, nil, testenv.Logger(t)); err == nil {
 			t.Errorf("secrets %v: want error", s)
 		}
 	}

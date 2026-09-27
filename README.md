@@ -2,7 +2,7 @@
 
 HLS Indexer lets Sonarr and Radarr find and download Ukrainian-dubbed movies, series, anime and cartoons from open streaming sites. The first source is [UAKino](https://uakino.best).
 
-Status: v0 in progress. The service skeleton runs: config, Docker, Newznab caps and SABnzbd config pass *arr connection tests. Search and downloads are not implemented yet.
+Status: v0 in progress. Config, Docker, Newznab caps and search, `t=get` and SABnzbd config work. Downloads are not implemented yet.
 
 ## Goals
 
@@ -62,7 +62,7 @@ Secrets exist only as env vars:
 | `INDEXER_API_KEY` | `apikey` for `/indexer/api` |
 | `DOWNLOADER_API_KEY` | `apikey` for `/downloader/api` |
 | `TMDB_API_KEY` | TMDb lookups |
-| `REDIS_URL` | Redis connection |
+| `REDIS_URL` | Redis connection, both roles |
 | `UAKINO_PROXY_URL` | Optional HTTP proxy for UAKino, off when empty |
 
 Settings:
@@ -77,6 +77,7 @@ Settings:
 | `worker.segment_concurrency` | `SEGMENT_CONCURRENCY` | `8` |
 | `uakino.base_url` | `UAKINO_BASE_URL` | `https://uakino.best` |
 | `uakino.rps` | `UAKINO_RPS` | `1` |
+| `uakino.player_hosts` | `UAKINO_PLAYER_HOSTS` (comma list) | `[ashdi.vip]` (inline movie players, subdomains included) |
 | `tmdb.base_url` | `TMDB_BASE_URL` | `https://api.themoviedb.org/3` |
 
 ## Sonarr and Radarr setup

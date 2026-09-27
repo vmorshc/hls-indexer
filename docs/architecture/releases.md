@@ -48,18 +48,21 @@ Shrek.2.2004.1080p.WEB-DL.UKR-TakTrebaProdakshn
 ## Size and quality
 
 Size = best-variant `BANDWIDTH` × sum of `EXTINF` / 8. It is an estimate.
-The flow samples one episode per voice and reuses its quality and size for the voice's other episodes. It uses real per-episode data when cached.
+The flow samples one episode per voice and reuses its quality and size for the voice's other episodes. It samples only voices on the returned page, after sorting and paging. It uses real per-episode data when cached.
 
 ## Search flow
 
 1. No `q` and no ID: return an empty channel. RSS is off in v1.
-2. ID (`tvdbid`, `tmdbid`, `imdbid`): TMDb gives the English title, the Ukrainian (`uk-UA`) title, year and season episode list.
-3. `q` only: strip a trailing year and use it as a filter.
-4. Anime absolute number (`q=12` with `tvdbid`, or `t=search&q=Title 12`): convert it to season and episode with TMDb episode data.
-5. Search the source with every title, first page only. Merge by source title key.
-6. Filter by year and season. Follow sibling season links when the requested season is on another page.
-7. Load each title's voices and episodes. Filter by `ep`.
-8. Build releases, sort by `pubDate` desc, then by release ID. Apply `offset` and `limit`.
+2. ID (`tvdbid`, `tmdbid`, `imdbid`): TMDb gives the English title, the Ukrainian (`uk-UA`) title, year and season episode list. An ID TMDb does not know gives an empty result.
+3. `q` only (`t=movie`, `t=search`): strip a trailing year and use it as a filter. A `t=search` query with a year searches movies only (Radarr's fallback).
+4. Anime absolute number (`q=12` with `tvdbid`, or `t=search&q=Title 12`): convert it to season and episode by counting TMDb episodes of regular seasons in order. For `t=search`, TMDb search must return a series whose English or Ukrainian title equals `Title`. Otherwise the whole `q` is the title.
+5. Date search (`season=2026&ep=09/15`): find the episode with that air date in TMDb season lists. It needs `tvdbid`, or a TMDb series search by `q`.
+6. Search the source with every title, first page only. Merge by source title key.
+7. Filter by kind (the Newznab function and `cat`), season and year. Movies allow ±1 year. Series compare the page year with the TMDb air year of the requested season, ±1. A `q` year never filters series.
+8. ID requests load only titles whose local or original title equals a TMDb title (letters and digits, case-insensitive). When some search hits match the Ukrainian TMDb title, the other hits are not loaded.
+9. Follow sibling season links when the requested season is on another page.
+10. Load each title's voices and episodes. Filter by `ep`.
+11. Build releases, sort by `pubDate` desc, then by release ID. Apply `offset` and `limit`. `pubDate` is the title page update date, the same for all its episodes.
 
 Put `tvdbid`, `tmdbid` and `imdb` attrs only on releases matched through a TMDb lookup. Sonarr searches by ID first and falls back to title only when the ID search returns nothing. Radarr's title fallback uses generic `t=search`.
 

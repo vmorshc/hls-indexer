@@ -31,6 +31,7 @@ internal/metadata/tmdb/   TMDb client
 internal/release/         release ID, title, group
 internal/source/          Source interface
 internal/source/uakino/   UAKino client, parser, cache policy
+internal/hls/             m3u8 parser
 internal/jobs/            Redis jobs, queue, history
 internal/downloader/      HLS → MKV worker
 ```

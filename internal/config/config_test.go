@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -35,10 +36,10 @@ func TestLoadDefaults(t *testing.T) {
 		HTTP:   HTTP{Addr: ":8080", PublicURL: "http://localhost:8080"},
 		Paths:  Paths{Incomplete: "/data/incomplete", Downloads: "/data/downloads"},
 		Worker: Worker{Jobs: 1, SegmentConcurrency: 8},
-		UAKino: UAKino{BaseURL: "https://uakino.best", RPS: 1},
+		UAKino: UAKino{BaseURL: "https://uakino.best", RPS: 1, PlayerHosts: []string{"ashdi.vip"}},
 		TMDb:   TMDb{BaseURL: "https://api.themoviedb.org/3"},
 	}
-	if c != want {
+	if !reflect.DeepEqual(c, want) {
 		t.Fatalf("got %+v\nwant %+v", c, want)
 	}
 }
@@ -84,6 +85,7 @@ func TestLoadLayers(t *testing.T) {
 				"SEGMENT_CONCURRENCY": "4",
 				"UAKINO_BASE_URL":     "http://ua",
 				"UAKINO_RPS":          "0.5",
+				"UAKINO_PLAYER_HOSTS": "a.test, b.test",
 				"TMDB_BASE_URL":       "http://tmdb",
 			},
 			check: func(t *testing.T, c Config) {
@@ -91,10 +93,10 @@ func TestLoadLayers(t *testing.T) {
 					HTTP:   HTTP{Addr: ":1", PublicURL: "http://pub"},
 					Paths:  Paths{Incomplete: "/i", Downloads: "/d"},
 					Worker: Worker{Jobs: 2, SegmentConcurrency: 4},
-					UAKino: UAKino{BaseURL: "http://ua", RPS: 0.5},
+					UAKino: UAKino{BaseURL: "http://ua", RPS: 0.5, PlayerHosts: []string{"a.test", "b.test"}},
 					TMDb:   TMDb{BaseURL: "http://tmdb"},
 				}
-				if c != want {
+				if !reflect.DeepEqual(c, want) {
 					t.Fatalf("got %+v\nwant %+v", c, want)
 				}
 			},

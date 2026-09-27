@@ -14,7 +14,8 @@ search → title page → playlist → player page → master m3u8 → media m3u
 `POST /ua/`, form `do=search&subaction=search&story=<query>`.
 
 - Items: `div#dle-content div.movie-item.short-item`.
-- Keep only items with `.full-quality`. Items without it are news posts.
+- Keep only items with `.full-quality` whose link is not under `/news/`. The rest are news posts.
+- Year: `.movie-desk-item` with label `Рік виходу`. Local title: `a.movie-title` text.
 - Title link: `a.movie-title[href]`. The last path segment `<news_id>-<slug>` is the title ID.
 - `.full-season` shows the available range, e.g. `2 сезон / 1-12 серія`. It never shows the season total.
 - 10 items per page. We read the first page only. Page N: `POST /index.php?do=search` with `from_page=N`. `search_start` has no effect.
@@ -51,7 +52,7 @@ Items: `.playlists-videos .playlists-items li[data-file]`. Skip `li` without `da
 | Serial | `Серія N` | voice name | voice group, e.g. `0_0`, same for all episodes of a voice |
 | Movie | voice name | voice name | `0` |
 
-`data-file` is protocol-relative, e.g. `//ashdi.vip/vod/51968`. Normalize to `https:`.
+`data-file` is protocol-relative, e.g. `//ashdi.vip/vod/51968`, or absolute. Resolve it against the site URL, which gives `https:`.
 
 ## 4. Player page
 

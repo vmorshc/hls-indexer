@@ -65,6 +65,7 @@ func runRole(t *testing.T, args []string, env map[string]string, ready string) s
 }
 
 func TestAPIStarts(t *testing.T) {
+	testenv.Redis(t)
 	override := filepath.Join(t.TempDir(), "override.yaml")
 	if err := os.WriteFile(override, []byte("http:\n  public_url: \"http://from-override\"\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -74,11 +75,12 @@ func TestAPIStarts(t *testing.T) {
 		"INDEXER_API_KEY":    "idx-secret",
 		"DOWNLOADER_API_KEY": "dl-secret",
 		"TMDB_API_KEY":       "tmdb-secret",
+		"REDIS_URL":          testenv.RedisURL(t),
 	}, "api listening")
 	if !strings.Contains(out, "http://from-override") {
 		t.Errorf("override not applied:\n%s", out)
 	}
-	for _, s := range []string{"idx-secret", "dl-secret", "tmdb-secret"} {
+	for _, s := range []string{"idx-secret", "dl-secret", "tmdb-secret", testenv.RedisURL(t)} {
 		if strings.Contains(out, s) {
 			t.Errorf("secret %q in logs:\n%s", s, out)
 		}

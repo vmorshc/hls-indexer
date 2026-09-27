@@ -26,6 +26,7 @@ flowchart LR
 
   subgraph shared["shared packages · both roles"]
     release["internal/release<br/>ID codec, naming, voice → group"]
+    hls["internal/hls<br/>m3u8 parser"]
     source["internal/source<br/>Source interface"]
     uakino["internal/source/uakino<br/>Stateless client, parser, cache policy"]
     jobs["internal/jobs<br/>Job store, queue, history"]
@@ -62,6 +63,7 @@ flowchart LR
   uakino -->|"HTTP/2"| site
   uakino -->|"player page, m3u8"| player
   uakino -->|"cache"| redis
+  uakino --> hls
   tmdb --> tmdbapi
   tmdb -->|"cache"| redis
   jobs --> redis
@@ -76,6 +78,7 @@ flowchart LR
 | `internal/release` | Release ID codec, release title, voice → group | Pure functions, no I/O |
 | `internal/source` | `Source` interface and shared types: title, voice, episode, stream | No source-specific fields |
 | `internal/source/uakino` | UAKino client, parser, cache policy | UAKino types never leave this package |
+| `internal/hls` | Master and media m3u8 parsing, best variant | Pure functions, no I/O |
 | `internal/jobs` | Job store, priority queue, history, dedup | Only package that touches job keys |
 | `internal/downloader` | Resolve → download → mux → validate → publish | Only package that runs ffmpeg |
 | `internal/config` | Merge defaults, override file and env | Layers and keys: README |
@@ -88,12 +91,15 @@ A source turns a query into titles and a release coordinate into a playable stre
 |---|---|
 | Search titles | Candidates: title ID, names, year, season, kind |
 | Load a title | Voices with episodes. Takes the expected episode count for cache decisions. |
+| Sample an episode | Best variant resolution, bandwidth and duration, for release quality and size |
 | Resolve an episode or movie voice | HLS master URL and subtitle tracks |
+
+`internal/catalog` holds the list of sources. A release ID prefix must name one of them, else `t=get` answers `300`.
 
 ## Deployment
 
 - Dockerfile stages: `golang:1.27.1` builds with `CGO_ENABLED=0` → `mwader/static-ffmpeg:9.0.2` supplies `ffmpeg` and `ffprobe` → `gcr.io/distroless/static-debian13` runtime. Binaries live in `/usr/local/bin`. The binary embeds `config/default.yaml`. The image also ships it at `/etc/hls-indexer/default.yaml`.
-- The entrypoint is `hls-indexer`, the command is the role: `api` (default) or `worker`. The worker pings Redis at start and exits on failure. The api refuses to start without both API keys.
+- The entrypoint is `hls-indexer`, the command is the role: `api` (default) or `worker`. Both roles ping Redis at start and exit on failure. The api uses Redis for the TMDb cache and refuses to start without both API keys.
 - `compose.yaml` runs `redis` (AOF on), `api` and `worker` from one image, with a shared `./data:/data` volume. `redis-test` (profile `test`, port 6380, no persistence) serves tests only.
 - `internal/app` wires the roles. `internal/testenv` is the S1 test harness: in-process API and worker, fake UAKino and TMDb servers, test Redis from `TEST_REDIS_URL`.
 

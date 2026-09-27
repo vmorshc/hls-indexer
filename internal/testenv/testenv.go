@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -35,6 +36,9 @@ type Options struct {
 	TMDb   http.Handler
 	// Worker starts the worker role in-process. It needs the test Redis.
 	Worker bool
+	// Redis gives the API the test Redis (TMDb cache). Without it the API runs
+	// with no cache. Worker implies Redis.
+	Redis bool
 	// Configure edits the config before the roles start.
 	Configure func(*config.Config)
 }
@@ -44,7 +48,7 @@ type Env struct {
 	API    *httptest.Server
 	UAKino *httptest.Server
 	TMDb   *httptest.Server
-	// Redis is set when the test Redis is in use, i.e. when Options.Worker is true.
+	// Redis is set when the test Redis is in use: Options.Redis or Options.Worker.
 	Redis *redis.Client
 }
 
@@ -92,13 +96,15 @@ func Start(t testing.TB, o Options) *Env {
 	cfg.Paths.Incomplete = filepath.Join(data, "incomplete")
 	cfg.Paths.Downloads = filepath.Join(data, "downloads")
 	cfg.UAKino.BaseURL = e.UAKino.URL
+	cfg.UAKino.RPS = 1000
+	cfg.UAKino.PlayerHosts = []string{e.UAKino.Listener.Addr().(*net.TCPAddr).IP.String()}
 	cfg.TMDb.BaseURL = e.TMDb.URL
 	cfg.Secrets = config.Secrets{
 		IndexerAPIKey:    IndexerKey,
 		DownloaderAPIKey: DownloaderKey,
 		TMDbAPIKey:       TMDbKey,
 	}
-	if o.Worker {
+	if o.Worker || o.Redis {
 		e.Redis = Redis(t)
 		cfg.Secrets.RedisURL = config.Secret(RedisURL(t))
 	}
@@ -108,7 +114,7 @@ func Start(t testing.TB, o Options) *Env {
 
 	e.API = httptest.NewUnstartedServer(nil)
 	cfg.HTTP.PublicURL = "http://" + e.API.Listener.Addr().String()
-	api, err := app.NewAPI(cfg)
+	api, err := app.NewAPI(cfg, e.Redis, Logger(t))
 	if err != nil {
 		e.API.Close()
 		t.Fatal(err)
