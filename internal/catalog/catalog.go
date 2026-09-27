@@ -196,7 +196,7 @@ func (c *Catalog) plan(ctx context.Context, q Query) (plan, bool, error) {
 			if err != nil || !ok {
 				return p, false, err
 			}
-			p.names = append(p.names, show.TitleUK)
+			p.names = append(p.names, show.Title, show.TitleUK)
 			return c.episode(ctx, p, show, q, 0)
 		}
 		p.season, p.episode = q.Season, atoi(q.Ep)
@@ -239,7 +239,7 @@ func (c *Catalog) plan(ctx context.Context, q Query) (plan, bool, error) {
 		if ok && (nameKey(show.Title) == nameKey(m[1]) || nameKey(show.TitleUK) == nameKey(m[1])) {
 			if s, e, ok := show.Absolute(atoi(m[2])); ok {
 				return plan{
-					names:   []string{m[1], show.TitleUK},
+					names:   []string{m[1], show.Title, show.TitleUK},
 					kinds:   map[source.Kind]bool{source.Series: true},
 					season:  s,
 					episode: e,
@@ -321,6 +321,7 @@ func (c *Catalog) titles(ctx context.Context, src source.Source, p plan) ([]sour
 
 	if p.strict {
 		picked = preferNameMatches(p.names, picked)
+		otherSeason = preferNameMatches(p.names, otherSeason)
 	}
 
 	loaded := map[string]bool{}

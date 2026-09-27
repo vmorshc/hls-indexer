@@ -170,14 +170,14 @@ func parseTitle(html string, pageURL *url.URL, isPlayer func(*url.URL) bool) (pa
 // one name without parentheses, else "UAKino".
 func inlineVoice(dubbing string) string {
 	v := clean(parenRe.ReplaceAllString(dubbing, ""))
-	if v == "" || strings.ContainsAny(v, ",|+") {
+	if v == "" || strings.ContainsAny(v, ",|") {
 		return fallbackVoice
 	}
 	return v
 }
 
 // parsePlaylist reads voices and episodes from the playlist JSON. data-file
-// resolves against the site URL, so protocol-relative links get https:.
+// resolves against the playlist URL, so protocol-relative links get https:.
 // It returns errNotData for ERR_NOT_DATA.
 func parsePlaylist(body string, base *url.URL) (voices []source.Voice, serial bool, err error) {
 	var resp struct {
@@ -197,6 +197,9 @@ func parsePlaylist(body string, base *url.URL) (voices []source.Voice, serial bo
 	doc, err := goquery.NewDocumentFromReader(strings.NewReader(resp.Response))
 	if err != nil {
 		return nil, false, err
+	}
+	if doc.Find(".playlists-videos .playlists-items").Length() == 0 {
+		return nil, false, fmt.Errorf("playlist: %w", errNotSite)
 	}
 	index := map[string]int{}
 	seen := map[string]bool{}

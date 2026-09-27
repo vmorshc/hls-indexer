@@ -36,7 +36,7 @@ func (id ID) String() string {
 
 var (
 	partRe  = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
-	unitRe  = regexp.MustCompile(`^s(\d{2,})e(\d{2,})$`)
+	unitRe  = regexp.MustCompile(`^s(\d{2,4})e(\d{2,5})$`)
 	voiceRe = regexp.MustCompile(`^[0-9a-f]{8}$`)
 )
 
@@ -77,7 +77,7 @@ func VoiceHash(voice string) string {
 // transliterated, "+" → "Plus", words capitalized and joined.
 func Group(voice string) string {
 	var b strings.Builder
-	for _, w := range words(strings.ReplaceAll(voice, "+", " Plus ")) {
+	for _, w := range words(strings.ReplaceAll(voice, "+", " Plus "), true) {
 		r := []rune(w)
 		b.WriteString(strings.ToUpper(string(r[0])) + string(r[1:]))
 	}
@@ -87,12 +87,13 @@ func Group(voice string) string {
 	return b.String()
 }
 
-// words transliterates s and splits it into ASCII alphanumeric words.
-// Apostrophes join, every other non-alphanumeric splits.
-func words(s string) []string {
+// words transliterates Cyrillic in s and splits it into alphanumeric words.
+// Apostrophes join, every other non-alphanumeric splits. ascii also drops
+// other non-ASCII letters, as the *arr group parser needs.
+func words(s string, ascii bool) []string {
 	s = strings.NewReplacer("'", "", "’", "", "ʼ", "").Replace(s)
 	return strings.FieldsFunc(Translit(s), func(r rune) bool {
-		return r > unicode.MaxASCII || !(unicode.IsLetter(r) || unicode.IsDigit(r))
+		return (ascii && r > unicode.MaxASCII) || !(unicode.IsLetter(r) || unicode.IsDigit(r))
 	})
 }
 
@@ -126,7 +127,7 @@ type Name struct {
 
 // Title builds Name.S01E02.1080p.WEB-DL.UKR-Group or Name.2004.1080p.WEB-DL.UKR-Group.
 func Title(n Name) string {
-	parts := words(n.Title)
+	parts := words(n.Title, false)
 	if n.Season > 0 || n.Episode > 0 {
 		parts = append(parts, fmt.Sprintf("S%02dE%02d", n.Season, n.Episode))
 	} else if n.Year > 0 {

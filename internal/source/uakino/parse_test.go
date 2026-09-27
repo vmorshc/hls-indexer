@@ -189,6 +189,23 @@ func TestParsePlaylistNotData(t *testing.T) {
 	if _, _, err := parsePlaylist("error", siteBase); err == nil {
 		t.Fatal("plain `error` body parsed")
 	}
+	if _, _, err := parsePlaylist(`{"success":true,"response":"<div>maintenance</div>"}`, siteBase); err == nil {
+		t.Fatal("playlist without items parsed as no voices")
+	}
+}
+
+func TestInlineVoice(t *testing.T) {
+	for in, want := range map[string]string{
+		"ТакТребаПродакш (укр.)": "ТакТребаПродакш",
+		"1+1":          "1+1",
+		"Cine+ (укр.)": "Cine+",
+		"":             "UAKino",
+		"багатоголосий закадровий | DniproFilm, Megogo Voice": "UAKino",
+	} {
+		if got := inlineVoice(in); got != want {
+			t.Errorf("inlineVoice(%q) = %q, want %q", in, got, want)
+		}
+	}
 }
 
 func TestParsePlayer(t *testing.T) {

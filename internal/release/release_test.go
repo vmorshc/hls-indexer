@@ -34,6 +34,7 @@ func TestParseRejects(t *testing.T) {
 		":312-shrek-2:movie:ab12cd34",
 		"uakino:312 shrek:movie:ab12cd34",
 		"uakino:312-shrek-2:movie:ab12cd34:x",
+		"uakino:1-x:s01e99999999999999999999:ab12cd34",
 	} {
 		if _, err := Parse(s); err == nil {
 			t.Errorf("Parse(%q): want error", s)
@@ -114,6 +115,7 @@ func TestTitle(t *testing.T) {
 		{Name{Title: "Mission: Impossible - Fallout", Year: 2018, Resolution: "720p", Voice: "1+1"}, "Mission.Impossible.Fallout.2018.720p.WEB-DL.UKR-1Plus1"},
 		{Name{Title: "Grey's Anatomy", Season: 1, Episode: 12, Resolution: "1080p", Voice: "x"}, "Greys.Anatomy.S01E12.1080p.WEB-DL.UKR-X"},
 		{Name{Title: "Людина-бензопила", Season: 1, Episode: 1, Voice: "Dzuski"}, "Liudyna.benzopyla.S01E01.WEB-DL.UKR-Dzuski"},
+		{Name{Title: "Léon", Year: 1994, Resolution: "1080p", Voice: "Dzuski"}, "Léon.1994.1080p.WEB-DL.UKR-Dzuski"},
 	}
 	for _, tt := range tests {
 		if got := Title(tt.in); got != tt.want {

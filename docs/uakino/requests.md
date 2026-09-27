@@ -52,7 +52,7 @@ Items: `.playlists-videos .playlists-items li[data-file]`. Skip `li` without `da
 | Serial | `Серія N` | voice name | voice group, e.g. `0_0`, same for all episodes of a voice |
 | Movie | voice name | voice name | `0` |
 
-`data-file` is protocol-relative, e.g. `//ashdi.vip/vod/51968`, or absolute. Resolve it against the site URL, which gives `https:`.
+`data-file` is protocol-relative, e.g. `//ashdi.vip/vod/51968`, or absolute. Resolve it against the final playlist URL, which gives `https:`.
 
 ## 4. Player page
 

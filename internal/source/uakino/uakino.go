@@ -58,12 +58,12 @@ func (c *Client) Title(ctx context.Context, titleID string) (source.Title, error
 	// The canonical URL may carry another slug. Keep the ID the caller used.
 	t.ID, t.Key = titleID, m[1]
 
-	body, _, err = c.getSite(ctx, "/engine/ajax/playlists.php?news_id="+m[1]+"&xfield=playlist",
+	body, final, err = c.getSite(ctx, "/engine/ajax/playlists.php?news_id="+m[1]+"&xfield=playlist",
 		http.Header{"X-Requested-With": {"XMLHttpRequest"}})
 	if err != nil {
 		return source.Title{}, err
 	}
-	voices, serial, err := parsePlaylist(body, c.base)
+	voices, serial, err := parsePlaylist(body, final)
 	switch {
 	case errors.Is(err, errNotData):
 		if p.inlineFile != "" {
