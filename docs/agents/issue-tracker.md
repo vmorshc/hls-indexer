@@ -49,3 +49,6 @@ Used by `/wayfinder`. The **map** is a single issue with **child** issues as tic
 When you work on implementations of some ticket (with /skill:implement or /skill:implement-spec) you have to:
 * mark existed "Acceptance criteria" checkboxes done during review where you see it's really done. Do not create this checkboxes, just mark if we have some
 * close ticket if all Acceptance criterias is done after review and all fixes applied 
+
+Mark tickets and criterias done even if you don't push changes to remote.
+But closing of main issue (parent issue) requires pushed to main implementation.
