@@ -353,6 +353,7 @@ func (s *Store) Retry(ctx context.Context, id string) (string, error) {
 // the job gone and stops the run.
 var deleteActiveScript = redis.NewScript(`
 local st = redis.call('HGET', KEYS[1], 'status')
+if not st then return 1 end
 if st ~= 'Queued' and st ~= 'Paused' and st ~= 'Downloading' then return 0 end
 redis.call('ZREM', KEYS[2], ARGV[1])
 redis.call('ZREM', KEYS[3], ARGV[1])
@@ -361,23 +362,25 @@ redis.call('DEL', KEYS[1])
 return 1
 `)
 
-// DeleteQueued drops an active job. A job that is gone or finished is left
-// alone without error. The API calls it.
-func (s *Store) DeleteQueued(ctx context.Context, id string) error {
+// DeleteQueued drops an active job. gone is true when the job no longer
+// exists: dropped now or before. A finished job stays and gone is false. The
+// API calls it.
+func (s *Store) DeleteQueued(ctx context.Context, id string) (gone bool, err error) {
 	j, err := s.Get(ctx, id)
 	if errors.Is(err, ErrNotFound) {
-		return nil
+		return true, nil
 	}
 	if err != nil {
-		return err
+		return false, err
 	}
 	return deleteActiveScript.Run(ctx, s.rdb,
-		[]string{jobKey(id), queueKey, activeKey, dedupKey(j.Category, j.Release)}, id).Err()
+		[]string{jobKey(id), queueKey, activeKey, dedupKey(j.Category, j.Release)}, id).Bool()
 }
 
 // deleteHistoryScript archives (ARGV[2] = 1) or deletes a finished job.
 var deleteHistoryScript = redis.NewScript(`
 local st = redis.call('HGET', KEYS[1], 'status')
+if not st then return 1 end
 if st ~= 'Completed' and st ~= 'Failed' then return 0 end
 if ARGV[2] == '1' then
   redis.call('HSET', KEYS[1], 'archived', 1)
@@ -389,14 +392,14 @@ return 1
 `)
 
 // DeleteHistory archives or deletes a finished job. An archived entry leaves
-// History and shows in Archive. A job that is gone or still active is left
-// alone without error. The API calls it.
-func (s *Store) DeleteHistory(ctx context.Context, id string, archive bool) error {
+// the default History list. done is true when the job was finished or is
+// gone. An active job stays and done is false. The API calls it.
+func (s *Store) DeleteHistory(ctx context.Context, id string, archive bool) (done bool, err error) {
 	a := 0
 	if archive {
 		a = 1
 	}
-	return deleteHistoryScript.Run(ctx, s.rdb, []string{jobKey(id), historyKey}, id, a).Err()
+	return deleteHistoryScript.Run(ctx, s.rdb, []string{jobKey(id), historyKey}, id, a).Bool()
 }
 
 // ErrNotFound marks an unknown job ID.

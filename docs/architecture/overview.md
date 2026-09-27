@@ -72,7 +72,7 @@ flowchart LR
 | Package | Responsibility | Boundary |
 |---|---|---|
 | `internal/newznab` | Newznab XML: caps, search, `t=get` | Protocol only. Calls `catalog`. |
-| `internal/sabnzbd` | SAB JSON: config, `addfile`, queue, history, retry, delete | Protocol only. Calls `jobs`. |
+| `internal/sabnzbd` | SAB JSON: config, `addfile`, queue, history, retry, delete | Protocol only. Calls `jobs`. Deletes `<jobId>` folders for `del_files=1`. |
 | `internal/catalog` | Search flow from request to sorted releases | Only package that combines TMDb and sources |
 | `internal/metadata/tmdb` | TMDb ID lookup, titles, episode lists, absolute → season/episode | Caches its own data |
 | `internal/release` | Release ID codec, release title, voice → group | Pure functions, no I/O |

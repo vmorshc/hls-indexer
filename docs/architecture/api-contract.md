@@ -54,7 +54,7 @@ The NZB carries no stream URLs, cookies or tokens.
 | `queue&name=delete` | `value=<jobId>`. Drop a `Queued`, `Paused` or `Downloading` job. The worker stops its run within a second. `del_files=1` deletes only `<jobId>` in `incomplete` and `downloads`. Returns `{"status":true}`. |
 | `history&name=delete` | `value=<jobId>` of a finished job. `archive=1` (default, as in SABnzbd 4) archives the entry, `archive=0` deletes it. `del_files=1` deletes only `<jobId>` in `incomplete` and `downloads`. Returns `{"status":true}`. |
 
-Deletes succeed for a job that is already gone or in the other list (nothing changes). Files are deleted only for values shaped like a job ID (`hls_` + 16 hex).
+Deletes succeed for a job that is already gone or in the other list (nothing changes). Files are deleted only for values shaped like a job ID (`hls_` + 16 hex) and never for a job in the other list. A failed file delete returns `Failed to delete files`.
 | `queue&name=pause|resume` | `value=<jobId>`. Pause or resume the job. Returns `{"status":true,"nzo_ids":[...]}`. Pausing a paused job or resuming a queued one succeeds. A job not in the queue returns `Unknown job`. |
 
 Empty queue or history: `slots: []`.
@@ -64,7 +64,7 @@ Empty queue or history: `slots: []`.
 | Case | Response |
 |---|---|
 | Newznab logical error | HTTP 200 `<error code description/>`: `100` bad key, `200` missing param, `202` unknown `t`, `300` unknown release (malformed ID or unknown source prefix) |
-| SAB logical error | HTTP 200 `{"status":false,"error":"..."}`: `API Key Required` (no key), `API Key Incorrect`, `Unknown release`, `Unknown job` (`retry`, pause, resume), `not implemented` (unknown mode). Every mode, `version` included, checks the key. |
+| SAB logical error | HTTP 200 `{"status":false,"error":"..."}`: `API Key Required` (no key), `API Key Incorrect`, `Unknown release`, `Unknown job` (`retry`, pause, resume), `Failed to delete files` (delete with `del_files=1`), `not implemented` (unknown mode). Every mode, `version` included, checks the key. |
 | Source or TMDb down before a job exists | HTTP 503 with a plain-text body, no job |
 | Failure after `addfile` | History `Failed` with `fail_message` |
 

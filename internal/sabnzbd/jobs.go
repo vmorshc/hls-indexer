@@ -227,23 +227,27 @@ func (h *Handler) control(w http.ResponseWriter, r *http.Request, do func(contex
 // jobID matches the IDs jobs.Add creates. Only such IDs name folders to delete.
 var jobID = regexp.MustCompile(`^hls_[0-9a-f]{16}$`)
 
-// delete drops the job in value with do. del_files=1 then removes only the
+// delete drops the job in value with do. do reports false when the job is in
+// the other list: nothing changes. Otherwise del_files=1 removes only the
 // job's own folders in incomplete and downloads. A job already gone succeeds.
-func (h *Handler) delete(w http.ResponseWriter, r *http.Request, do func(context.Context, string) error) {
+func (h *Handler) delete(w http.ResponseWriter, r *http.Request, do func(context.Context, string) (bool, error)) {
 	id := r.FormValue("value")
 	if !jobID.MatchString(id) {
 		writeJSON(w, map[string]any{"status": true})
 		return
 	}
-	if err := do(r.Context(), id); err != nil {
+	ok, err := do(r.Context(), id)
+	if err != nil {
 		h.log.Error("delete", "err", err)
 		http.Error(w, "job store unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	if r.FormValue("del_files") == "1" {
+	if ok && r.FormValue("del_files") == "1" {
 		for _, dir := range []string{h.incompleteDir, h.completeDir} {
 			if err := os.RemoveAll(filepath.Join(dir, id)); err != nil {
 				h.log.Error("delete files", "job", id, "err", err)
+				writeError(w, "Failed to delete files")
+				return
 			}
 		}
 	}
@@ -286,7 +290,9 @@ func (h *Handler) history(w http.ResponseWriter, r *http.Request) {
 	case "delete":
 		// archive defaults to 1, as in SABnzbd 4.
 		archive := r.FormValue("archive") != "0"
-		h.delete(w, r, func(ctx context.Context, id string) error { return h.jobs.DeleteHistory(ctx, id, archive) })
+		h.delete(w, r, func(ctx context.Context, id string) (bool, error) {
+			return h.jobs.DeleteHistory(ctx, id, archive)
+		})
 		return
 	default:
 		writeError(w, "not implemented")

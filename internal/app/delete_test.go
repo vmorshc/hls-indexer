@@ -75,11 +75,13 @@ func TestQueueDelete(t *testing.T) {
 	}
 	mustTrue(t, "delete again", sab(t, e.Env, "mode=queue&name=delete&del_files=1&value="+run))
 
-	// The release is free again and the worker is free for it.
+	// The release is free again. The single worker slot is free for it while
+	// the deleted run's segment is still held.
 	next := grab(t, e.Env, rels[0], 0)
 	if next == run {
 		t.Fatal("dedup kept the deleted job")
 	}
+	waitSlot(t, e.Env, next, hasStatus("Downloading"))
 	g.open()
 	if s := waitHistory(t, e.Env, next); s["status"] != "Completed" {
 		t.Fatalf("history %v", s)
@@ -128,6 +130,13 @@ func TestHistoryDelete(t *testing.T) {
 	eq(t, "archive", historyIDs(t, e.Env, "archive=1"), []string{c})
 	if exists(filepath.Join(dl, a)) {
 		t.Error("archived folder kept")
+	}
+
+	// A delete aimed at the other list changes nothing, files included.
+	mustTrue(t, "queue delete of finished", sab(t, e.Env, "mode=queue&name=delete&del_files=1&value="+c))
+	eq(t, "archive", historyIDs(t, e.Env, "archive=1"), []string{c})
+	if !exists(filepath.Join(dl, c)) {
+		t.Error("queue delete removed a finished job's folder")
 	}
 
 	for _, id := range []string{a, b, "hls_0000000000000000", "../x"} {
