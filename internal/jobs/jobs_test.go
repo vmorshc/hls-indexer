@@ -138,3 +138,38 @@ func TestKeysUsePrefix(t *testing.T) {
 		}
 	}
 }
+
+func TestRetryReplacesFailedJob(t *testing.T) {
+	ctx := context.Background()
+	s := jobs.New(testenv.Redis(t))
+	old, _ := s.Add(ctx, "r1", "Title", "sonarr", jobs.PriorityHigh)
+	claim(t, s)
+	s.Fail(ctx, old, "boom")
+	id, err := s.Retry(ctx, old)
+	if err != nil || id == old {
+		t.Fatalf("retry %s %v", id, err)
+	}
+	if h, total, _ := s.History(ctx, "", "", 0, 0); total != 0 {
+		t.Fatalf("history %+v", h)
+	}
+	j := claim(t, s)
+	if j.ID != id || j.Release != "r1" || j.Title != "Title" || j.Category != "sonarr" || j.Priority != jobs.PriorityHigh {
+		t.Fatalf("new job %+v", j)
+	}
+	if _, err := s.Get(ctx, old); err != jobs.ErrNotFound {
+		t.Fatalf("old job: %v", err)
+	}
+}
+
+func TestRetryNeedsFailedJob(t *testing.T) {
+	ctx := context.Background()
+	s := jobs.New(testenv.Redis(t))
+	queued, _ := s.Add(ctx, "r1", "t", "sonarr", jobs.PriorityNormal)
+	done, _ := s.Add(ctx, "r2", "t", "sonarr", jobs.PriorityNormal)
+	s.Complete(ctx, done, "/d", 1)
+	for _, id := range []string{queued, done, "hls_missing"} {
+		if _, err := s.Retry(ctx, id); err != jobs.ErrNotFound {
+			t.Errorf("%s: err %v", id, err)
+		}
+	}
+}

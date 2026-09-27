@@ -115,8 +115,8 @@ func RunWorker(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		Pipeline: downloader.Pipeline{
 			HTTP:        &http.Client{Timeout: 2 * time.Minute},
 			Concurrency: cfg.Worker.SegmentConcurrency,
-			Attempts:    5,
-			Backoff:     time.Second,
+			Attempts:    cfg.Worker.SegmentAttempts,
+			Backoff:     cfg.Worker.SegmentBackoff,
 			FFmpeg:      "ffmpeg",
 			FFprobe:     "ffprobe",
 			Encode: downloader.Encode{

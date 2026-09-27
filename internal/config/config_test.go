@@ -9,6 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func env(m map[string]string) func(string) (string, bool) {
@@ -35,7 +36,7 @@ func TestLoadDefaults(t *testing.T) {
 	want := Config{
 		HTTP:   HTTP{Addr: ":8080", PublicURL: "http://localhost:8080"},
 		Paths:  Paths{Incomplete: "/data/incomplete", Downloads: "/data/downloads"},
-		Worker: Worker{Jobs: 1, SegmentConcurrency: 8, X264Preset: "veryfast", X264CRF: 20, AACBitrate: "192k"},
+		Worker: Worker{Jobs: 1, SegmentConcurrency: 8, SegmentAttempts: 5, SegmentBackoff: time.Second, X264Preset: "veryfast", X264CRF: 20, AACBitrate: "192k"},
 		UAKino: UAKino{BaseURL: "https://uakino.best", RPS: 1, PlayerHosts: []string{"ashdi.vip"}},
 		TMDb:   TMDb{BaseURL: "https://api.themoviedb.org/3"},
 	}
@@ -83,6 +84,8 @@ func TestLoadLayers(t *testing.T) {
 				"DOWNLOADS_DIR":       "/d",
 				"WORKER_JOBS":         "2",
 				"SEGMENT_CONCURRENCY": "4",
+				"SEGMENT_ATTEMPTS":    "3",
+				"SEGMENT_BACKOFF":     "250ms",
 				"X264_PRESET":         "slow",
 				"X264_CRF":            "23",
 				"AAC_BITRATE":         "128k",
@@ -95,7 +98,7 @@ func TestLoadLayers(t *testing.T) {
 				want := Config{
 					HTTP:   HTTP{Addr: ":1", PublicURL: "http://pub"},
 					Paths:  Paths{Incomplete: "/i", Downloads: "/d"},
-					Worker: Worker{Jobs: 2, SegmentConcurrency: 4, X264Preset: "slow", X264CRF: 23, AACBitrate: "128k"},
+					Worker: Worker{Jobs: 2, SegmentConcurrency: 4, SegmentAttempts: 3, SegmentBackoff: 250 * time.Millisecond, X264Preset: "slow", X264CRF: 23, AACBitrate: "128k"},
 					UAKino: UAKino{BaseURL: "http://ua", RPS: 0.5, PlayerHosts: []string{"a.test", "b.test"}},
 					TMDb:   TMDb{BaseURL: "http://tmdb"},
 				}
@@ -145,6 +148,9 @@ func TestLoadErrors(t *testing.T) {
 		{name: "unknown key in override file", override: writeFile(t, "http:\n  port: 1\n")},
 		{name: "bad int env", env: map[string]string{"WORKER_JOBS": "many"}},
 		{name: "zero jobs", env: map[string]string{"WORKER_JOBS": "0"}},
+		{name: "zero attempts", env: map[string]string{"SEGMENT_ATTEMPTS": "0"}},
+		{name: "bad backoff env", env: map[string]string{"SEGMENT_BACKOFF": "soon"}},
+		{name: "bad backoff in file", override: writeFile(t, "worker:\n  segment_backoff: soon\n")},
 		{name: "bad rps", env: map[string]string{"UAKINO_RPS": "0"}},
 	}
 	for _, tt := range tests {

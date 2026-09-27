@@ -4,7 +4,7 @@ Redis is the only store. Every key uses the prefix `hls-indexer:`. Compose runs 
 
 | Data | Owner | Lifetime |
 |---|---|---|
-| Jobs: release ID, category, priority, status, progress, `fail_message`, timestamps | `internal/jobs` | until history delete with `archive=0` |
+| Jobs: release ID, category, priority, status, progress, `fail_message`, timestamps | `internal/jobs` | until history delete with `archive=0` or `retry` |
 | Queue of pending job IDs, by priority | `internal/jobs` | until claimed |
 | Active job per release and category, for `addfile` dedup | `internal/jobs` | while the job is active |
 | History, newest first; archived entries flagged | `internal/jobs` | until deleted |

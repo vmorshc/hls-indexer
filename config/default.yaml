@@ -10,6 +10,10 @@ paths:
 worker:
   jobs: 1
   segment_concurrency: 8
+  # Tries per segment and subtitle. The wait between tries starts at
+  # segment_backoff and doubles. When the tries run out, the job fails.
+  segment_attempts: 5
+  segment_backoff: "1s"
   # Re-encode for sources that are not H.264 video or AAC audio.
   x264_preset: "veryfast"
   x264_crf: 20

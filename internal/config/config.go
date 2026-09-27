@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"go.yaml.in/yaml/v4"
 
@@ -38,6 +39,9 @@ type Paths struct {
 type Worker struct {
 	Jobs               int `yaml:"jobs"`
 	SegmentConcurrency int `yaml:"segment_concurrency"`
+	// Tries per segment and subtitle, and the first wait between tries (doubled each time).
+	SegmentAttempts int           `yaml:"segment_attempts"`
+	SegmentBackoff  time.Duration `yaml:"segment_backoff"`
 	// Re-encode settings for sources that are not H.264 or AAC.
 	X264Preset string `yaml:"x264_preset"`
 	X264CRF    int    `yaml:"x264_crf"`
@@ -88,6 +92,8 @@ func (c Config) LogValue() slog.Value {
 		slog.String("paths.downloads", c.Paths.Downloads),
 		slog.Int("worker.jobs", c.Worker.Jobs),
 		slog.Int("worker.segment_concurrency", c.Worker.SegmentConcurrency),
+		slog.Int("worker.segment_attempts", c.Worker.SegmentAttempts),
+		slog.Duration("worker.segment_backoff", c.Worker.SegmentBackoff),
 		slog.String("worker.x264_preset", c.Worker.X264Preset),
 		slog.Int("worker.x264_crf", c.Worker.X264CRF),
 		slog.String("worker.aac_bitrate", c.Worker.AACBitrate),
@@ -149,6 +155,7 @@ func applyEnv(c *Config, lookupEnv func(string) (string, bool)) error {
 	ints := map[string]*int{
 		"WORKER_JOBS":         &c.Worker.Jobs,
 		"SEGMENT_CONCURRENCY": &c.Worker.SegmentConcurrency,
+		"SEGMENT_ATTEMPTS":    &c.Worker.SegmentAttempts,
 		"X264_CRF":            &c.Worker.X264CRF,
 	}
 	for k, p := range ints {
@@ -162,6 +169,13 @@ func applyEnv(c *Config, lookupEnv func(string) (string, bool)) error {
 	}
 	if v, ok := lookupEnv("UAKINO_PLAYER_HOSTS"); ok {
 		c.UAKino.PlayerHosts = strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ' ' })
+	}
+	if v, ok := lookupEnv("SEGMENT_BACKOFF"); ok {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("env SEGMENT_BACKOFF: %w", err)
+		}
+		c.Worker.SegmentBackoff = d
 	}
 	if v, ok := lookupEnv("UAKINO_RPS"); ok {
 		f, err := strconv.ParseFloat(v, 64)
@@ -192,6 +206,12 @@ func (c Config) validate() error {
 	}
 	if c.Worker.SegmentConcurrency < 1 {
 		errs = append(errs, errors.New("worker.segment_concurrency must be at least 1"))
+	}
+	if c.Worker.SegmentAttempts < 1 {
+		errs = append(errs, errors.New("worker.segment_attempts must be at least 1"))
+	}
+	if c.Worker.SegmentBackoff < 0 {
+		errs = append(errs, errors.New("worker.segment_backoff must not be negative"))
 	}
 	if c.Worker.X264Preset == "" || c.Worker.AACBitrate == "" {
 		errs = append(errs, errors.New("worker.x264_preset and worker.aac_bitrate must be set"))

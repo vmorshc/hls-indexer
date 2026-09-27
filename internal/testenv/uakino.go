@@ -22,6 +22,9 @@ type FakeUAKino struct {
 	// Segments serves every media playlist as the 3 real 480p fixture segments,
 	// so the worker can download and mux a stream.
 	Segments bool
+	// Intercept, when set, sees every request first. It returns true when it
+	// wrote the response. Tests use it to break the site or a segment.
+	Intercept func(w http.ResponseWriter, r *http.Request) bool
 }
 
 // shortMedia lists the fixture segments with their probed media durations.
@@ -91,6 +94,9 @@ func (f *FakeUAKino) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.requests = append(f.requests, rec)
 	f.mu.Unlock()
 
+	if f.Intercept != nil && f.Intercept(w, r) {
+		return
+	}
 	p := r.URL.Path
 	switch {
 	case r.Method == http.MethodPost && p == "/ua/":

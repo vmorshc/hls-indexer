@@ -49,6 +49,25 @@ func (h *Handler) addfile(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"status": true, "nzo_ids": []string{id}})
 }
 
+// retry queues a Failed job again as a new job with a fresh resolve.
+func (h *Handler) retry(w http.ResponseWriter, r *http.Request) {
+	if h.jobs == nil {
+		http.Error(w, "job store unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	id, err := h.jobs.Retry(r.Context(), r.FormValue("value"))
+	if errors.Is(err, jobs.ErrNotFound) {
+		writeError(w, "Unknown job")
+		return
+	}
+	if err != nil {
+		h.log.Error("retry", "err", err)
+		http.Error(w, "job store unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	writeJSON(w, map[string]any{"status": true, "nzo_id": id})
+}
+
 // formFile returns the uploaded NZB. SABnzbd names the field "name"; "nzbfile" is also accepted.
 func formFile(r *http.Request) (io.ReadCloser, fileHeader, error) {
 	for _, k := range []string{"name", "nzbfile"} {

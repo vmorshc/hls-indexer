@@ -199,6 +199,29 @@ func (s *Store) finish(ctx context.Context, id string, values ...any) error {
 	return err
 }
 
+// Retry queues a failed job again as a new job and drops the failed one from
+// history, like SABnzbd. The new job resolves the stream from scratch. It
+// returns ErrNotFound unless id is a Failed job.
+func (s *Store) Retry(ctx context.Context, id string) (string, error) {
+	j, err := s.Get(ctx, id)
+	if err != nil {
+		return "", err
+	}
+	if j.Status != Failed {
+		return "", ErrNotFound
+	}
+	newID, err := s.Add(ctx, j.Release, j.Title, j.Category, j.Priority)
+	if err != nil {
+		return "", err
+	}
+	_, err = s.rdb.TxPipelined(ctx, func(p redis.Pipeliner) error {
+		p.ZRem(ctx, historyKey, id)
+		p.Del(ctx, jobKey(id))
+		return nil
+	})
+	return newID, err
+}
+
 // ErrNotFound marks an unknown job ID.
 var ErrNotFound = errors.New("job not found")
 

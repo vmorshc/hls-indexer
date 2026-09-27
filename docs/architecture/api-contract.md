@@ -50,7 +50,7 @@ The NZB carries no stream URLs, cookies or tokens.
 | `addfile` | Multipart NZB in field `name` (or `nzbfile`). Accept only one `hls-indexer:<releaseId>` file and reject any DTD or entity declaration with `Unknown release`. The upload file name without `.nzb` (or `nzbname`) becomes the output file name. Persist the job, then return `{"status":true,"nzo_ids":["<jobId>"]}`. The same active release in the same category returns the existing `jobId`. `priority`: `-100` default, `-2` paused, `-1` low, `0` normal, `1` high, `2` force. |
 | `queue` | Filter param `category`, item field `cat`. Paging `start`, `limit`. Fields: `mb`, `mbleft` (MiB), `percentage`, `timeleft` (`H:MM:SS`). Status `Queued`, `Downloading` (covers resolve, download, mux and validate) or `Paused`. `limit=0` returns all. |
 | `history` | Item field `category`. Fields: `nzo_id`, `name`, `status` `Completed` or `Failed`, `fail_message`, `bytes`, `download_time` (s), `storage` = `/data/downloads/<jobId>`. Newest first. Filter params `category` and `status` apply before paging (`start`, `limit`). |
-| `retry` | New job, fresh resolve. Returns `{"status":true,"nzo_id":"<newJobId>"}`. |
+| `retry` | `value=<jobId>` of a `Failed` job. New job, fresh resolve. The failed job leaves history. Returns `{"status":true,"nzo_id":"<newJobId>"}`. Any other ID returns `Unknown job`. |
 | `queue&name=delete` | Stop the worker, drop the job. `del_files=1` deletes only this job's files. |
 | `history&name=delete` | `archive=1` archives the entry, `archive=0` deletes it. `del_files` touches only this job's folder. Deleting a job that is already gone succeeds. |
 | `queue&name=pause|resume` | Pause or resume one job |
@@ -62,7 +62,7 @@ Empty queue or history: `slots: []`.
 | Case | Response |
 |---|---|
 | Newznab logical error | HTTP 200 `<error code description/>`: `100` bad key, `200` missing param, `202` unknown `t`, `300` unknown release (malformed ID or unknown source prefix) |
-| SAB logical error | HTTP 200 `{"status":false,"error":"..."}`: `API Key Required` (no key), `API Key Incorrect`, `Unknown release`, `not implemented` (unknown mode). Every mode, `version` included, checks the key. |
+| SAB logical error | HTTP 200 `{"status":false,"error":"..."}`: `API Key Required` (no key), `API Key Incorrect`, `Unknown release`, `Unknown job` (`retry`), `not implemented` (unknown mode). Every mode, `version` included, checks the key. |
 | Source or TMDb down before a job exists | HTTP 503 with a plain-text body, no job |
 | Failure after `addfile` | History `Failed` with `fail_message` |
 

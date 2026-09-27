@@ -64,6 +64,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.queue(w, r)
 	case "history":
 		h.history(w, r)
+	case "retry":
+		h.retry(w, r)
 	default:
 		writeError(w, "not implemented")
 	}

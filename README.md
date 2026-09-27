@@ -75,6 +75,8 @@ Settings:
 | `paths.downloads` | `DOWNLOADS_DIR` | `/data/downloads` |
 | `worker.jobs` | `WORKER_JOBS` | `1` |
 | `worker.segment_concurrency` | `SEGMENT_CONCURRENCY` | `8` |
+| `worker.segment_attempts` | `SEGMENT_ATTEMPTS` | `5` (tries per segment and subtitle, then the job fails) |
+| `worker.segment_backoff` | `SEGMENT_BACKOFF` | `1s` (first wait between tries, doubled each time) |
 | `worker.x264_preset` | `X264_PRESET` | `veryfast` (re-encode of non-H.264 video) |
 | `worker.x264_crf` | `X264_CRF` | `20` |
 | `worker.aac_bitrate` | `AAC_BITRATE` | `192k` (re-encode of non-AAC audio) |

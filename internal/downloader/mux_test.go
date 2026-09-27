@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -263,5 +264,88 @@ func TestProbeSegment(t *testing.T) {
 	}
 	if _, err := p.ProbeSegment(context.Background(), []byte("not a segment")); err == nil {
 		t.Fatal("garbage probed without error")
+	}
+}
+
+// brokenServer serves the uakino fixture segments. break_ replaces the
+// response of one segment file with its own.
+func brokenServer(t *testing.T, file string, break_ func(w http.ResponseWriter, data []byte)) (*httptest.Server, hls.Media) {
+	srv, m := segmentServer(t, 0)
+	fixtures := srv.Config.Handler
+	srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/"+file {
+			fixtures.ServeHTTP(w, r)
+			return
+		}
+		data, err := os.ReadFile(filepath.Join(uakinoDir, file))
+		if err != nil {
+			t.Error(err)
+		}
+		break_(w, data)
+	})
+	return srv, m
+}
+
+// S4 failure paths. Each fails the mux, so the worker marks the job Failed.
+func TestMuxFailures(t *testing.T) {
+	needFFmpeg(t)
+	videoOnly := func(w http.ResponseWriter, data []byte) {
+		cmd := exec.Command("ffmpeg", "-v", "error", "-f", "mpegts", "-i", "pipe:0", "-map", "0:v", "-c", "copy", "-f", "mpegts", "pipe:1")
+		cmd.Stdin = strings.NewReader(string(data))
+		out, err := cmd.Output()
+		if err != nil {
+			t.Error(err)
+		}
+		w.Write(out)
+	}
+	tests := []struct {
+		name, file string
+		break_     func(w http.ResponseWriter, data []byte)
+		want       string
+	}{
+		{"missing segment", "segment2.ts", func(w http.ResponseWriter, _ []byte) {
+			http.NotFound(w, nil)
+		}, "segment 2: 3 attempts: status 404"},
+		{"short body", "segment2.ts", func(w http.ResponseWriter, data []byte) {
+			w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+			w.Write(data[:len(data)/2])
+		}, "segment 2: 3 attempts: unexpected EOF"},
+		// No Content-Length, so the cut is invisible to the download. ffmpeg
+		// exits 0 on the early EOF and only the duration check catches it.
+		{"truncated stream", "segment3.ts", func(w http.ResponseWriter, data []byte) {
+			w.(http.Flusher).Flush()
+			w.Write(data[:188*100])
+		}, "validate: video duration"},
+		{"not a segment", "segment1.ts", func(w http.ResponseWriter, _ []byte) {
+			w.Write([]byte("<html>not a segment</html>"))
+		}, "codec probe"},
+		{"no audio", "segment1.ts", videoOnly, `codec probe: video "h264", audio ""`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv, m := brokenServer(t, tt.file, tt.break_)
+			err := testPipeline(srv).Mux(context.Background(), m, nil, filepath.Join(t.TempDir(), "x.mkv"), func(int, int64) {})
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err %v, want %q", err, tt.want)
+			}
+		})
+	}
+}
+
+// A short body is retried until the segment arrives whole.
+func TestMuxRetriesShortSegment(t *testing.T) {
+	needFFmpeg(t)
+	var hits atomic.Int32
+	srv, m := brokenServer(t, "segment2.ts", func(w http.ResponseWriter, data []byte) {
+		w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+		if hits.Add(1) <= 2 {
+			data = data[:len(data)/2]
+		}
+		w.Write(data)
+	})
+	var bytes int64
+	err := testPipeline(srv).Mux(context.Background(), m, nil, filepath.Join(t.TempDir(), "x.mkv"), func(_ int, n int64) { bytes += n })
+	if err != nil || hits.Load() != 3 || bytes != 614196+369044+513240 {
+		t.Fatalf("err %v, %d requests, %d bytes", err, hits.Load(), bytes)
 	}
 }
