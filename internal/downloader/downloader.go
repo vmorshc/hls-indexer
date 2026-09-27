@@ -84,16 +84,27 @@ func (w *Worker) run(ctx context.Context, j jobs.Job) {
 	if err != nil {
 		os.RemoveAll(stage)
 		log.Warn("job failed", "err", err)
-		if err := w.Jobs.Fail(context.WithoutCancel(ctx), j.ID, err.Error()); err != nil {
-			log.Error("mark failed", "err", err)
-		}
+		msg := err.Error()
+		w.retry(ctx, log, "mark failed", func() error { return w.Jobs.Fail(ctx, j.ID, msg) })
 		return
 	}
-	if err := w.Jobs.Complete(ctx, j.ID, storage, size); err != nil {
-		log.Error("mark completed", "err", err)
-		return
-	}
+	w.retry(ctx, log, "mark completed", func() error { return w.Jobs.Complete(ctx, j.ID, storage, size) })
 	log.Info("job completed", "storage", storage, "bytes", size)
+}
+
+// retry repeats a status write until it succeeds or ctx ends. A published file
+// must not stay invisible because Redis blinked.
+func (w *Worker) retry(ctx context.Context, log *slog.Logger, what string, f func() error) {
+	wait := 100 * time.Millisecond
+	for {
+		err := f()
+		if err == nil || ctx.Err() != nil {
+			return
+		}
+		log.Error(what, "err", err)
+		sleep(ctx, wait)
+		wait = min(wait*2, 10*time.Second)
+	}
 }
 
 func (w *Worker) process(ctx context.Context, j jobs.Job, stage string) (string, int64, error) {

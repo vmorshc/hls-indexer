@@ -72,6 +72,20 @@ func TestRequeueRestartsDownloadingJobs(t *testing.T) {
 	}
 }
 
+func TestRequeueRestoresJobDroppedBetweenPopAndClaim(t *testing.T) {
+	ctx := context.Background()
+	r := testenv.Redis(t)
+	s := jobs.New(r)
+	id, _ := s.Add(ctx, "r1", "t", "sonarr", jobs.PriorityNormal)
+	r.ZPopMin(ctx, jobs.Prefix+"queue") // crash after the pop, before the status write
+	if err := s.Requeue(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if j := claim(t, s); j.ID != id {
+		t.Fatalf("claimed %s", j.ID)
+	}
+}
+
 func TestQueueAndHistory(t *testing.T) {
 	ctx := context.Background()
 	s := jobs.New(testenv.Redis(t))

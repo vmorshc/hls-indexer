@@ -116,15 +116,11 @@ func absURL(base *url.URL, ref string) string {
 // Sample reads the player page, the master playlist and the best variant's
 // media playlist.
 func (c *Client) Sample(ctx context.Context, ep source.Episode) (source.Media, error) {
-	body, _, err := c.getPlayer(ctx, ep.Locator)
+	s, err := c.Resolve(ctx, ep)
 	if err != nil {
 		return source.Media{}, err
 	}
-	p, err := parsePlayer(body)
-	if err != nil {
-		return source.Media{}, fmt.Errorf("%w: %v", source.ErrUnavailable, err)
-	}
-	body, final, err := c.getPlayer(ctx, p.File)
+	body, final, err := c.getPlayer(ctx, s.Master)
 	if err != nil {
 		return source.Media{}, err
 	}

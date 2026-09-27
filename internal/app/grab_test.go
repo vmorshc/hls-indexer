@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -77,6 +78,9 @@ func TestAddfileRejectsForeignNZB(t *testing.T) {
 		"external entity": `<!DOCTYPE nzb [<!ENTITY x SYSTEM "file:///etc/passwd">]>
 <nzb><file subject="hls-indexer:uakino:312-shrek-2:movie:&x;"/></nzb>`,
 		"not xml": `hello`,
+		"extra file without subject": `<nzb><file subject="hls-indexer:uakino:312-shrek-2:movie:ab12cd34"/><file/></nzb>`,
+		"dtd after 1 MiB": `<nzb><file subject="hls-indexer:uakino:312-shrek-2:movie:ab12cd34"/></nzb>` +
+			strings.Repeat(" ", 1<<20) + `<!DOCTYPE x>`,
 	}
 	for name, nzb := range tests {
 		t.Run(name, func(t *testing.T) {

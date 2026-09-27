@@ -16,9 +16,6 @@ import (
 	"github.com/vmorshc/hls-indexer/internal/release"
 )
 
-// maxNZB caps the NZB upload. An HLS Indexer NZB is a few hundred bytes.
-const maxNZB = 64 << 10
-
 var errBadNZB = errors.New("Unknown release")
 
 // addfile accepts an HLS Indexer NZB and creates a job. It never waits for the download.
@@ -27,17 +24,13 @@ func (h *Handler) addfile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "job store unavailable", http.StatusServiceUnavailable)
 		return
 	}
-	if err := r.ParseMultipartForm(maxNZB); err != nil {
-		writeError(w, "Unknown release")
-		return
-	}
 	f, hdr, err := formFile(r)
 	if err != nil {
 		writeError(w, "Unknown release")
 		return
 	}
 	defer f.Close()
-	rid, err := parseNZB(io.LimitReader(f, maxNZB))
+	rid, err := parseNZB(f)
 	if err != nil || !h.hasSource(rid.Source) {
 		writeError(w, "Unknown release")
 		return
@@ -72,7 +65,8 @@ type fileHeader struct{ Filename string }
 // declaration rejects the document.
 func parseNZB(r io.Reader) (release.ID, error) {
 	d := xml.NewDecoder(r)
-	var subjects []string
+	var files int
+	var subject string
 	for {
 		tok, err := d.Token()
 		if errors.Is(err, io.EOF) {
@@ -88,17 +82,18 @@ func parseNZB(r io.Reader) (release.ID, error) {
 			if t.Name.Local != "file" {
 				continue
 			}
+			files++
 			for _, a := range t.Attr {
 				if a.Name.Local == "subject" {
-					subjects = append(subjects, a.Value)
+					subject = a.Value
 				}
 			}
 		}
 	}
-	if len(subjects) != 1 || !strings.HasPrefix(subjects[0], release.NZBSubjectPrefix) {
+	if files != 1 || !strings.HasPrefix(subject, release.NZBSubjectPrefix) {
 		return release.ID{}, errBadNZB
 	}
-	return release.Parse(strings.TrimPrefix(subjects[0], release.NZBSubjectPrefix))
+	return release.Parse(strings.TrimPrefix(subject, release.NZBSubjectPrefix))
 }
 
 // jobTitle turns the uploaded file name into a safe output name. *arr names the

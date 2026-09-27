@@ -4,6 +4,7 @@ package sabnzbd
 import (
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 
@@ -30,7 +31,15 @@ func New(apiKey, completeDir string, store *jobs.Store, hasSource func(string) b
 	return &Handler{apiKey: apiKey, completeDir: completeDir, jobs: store, hasSource: hasSource, log: log}
 }
 
+// maxRequest caps every request body. An HLS Indexer NZB is a few hundred bytes.
+const maxRequest = 1 << 20
+
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequest)
+	if err := r.ParseMultipartForm(maxRequest); err != nil && !errors.Is(err, http.ErrNotMultipart) {
+		writeError(w, "Unknown release")
+		return
+	}
 	key := r.FormValue("apikey")
 	if key == "" {
 		writeError(w, "API Key Required")

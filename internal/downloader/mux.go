@@ -95,13 +95,13 @@ func (p Pipeline) feed(ctx context.Context, m hls.Media, w interface{ Write([]by
 		case <-ctx.Done():
 			return i, ctx.Err()
 		}
-		<-sem
 		if r.err != nil {
 			return i, fmt.Errorf("segment %d: %w", i+1, r.err)
 		}
 		if _, err := w.Write(r.data); err != nil {
 			return i, fmt.Errorf("ffmpeg stdin: %w", err)
 		}
+		<-sem // the segment leaves memory only after the write
 		progress(i+1, int64(len(r.data)))
 	}
 	return len(slots), nil

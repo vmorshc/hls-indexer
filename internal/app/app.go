@@ -53,7 +53,7 @@ func NewAPI(cfg config.Config, rdb *redis.Client, log *slog.Logger) (http.Handle
 	return mux, nil
 }
 
-func newUAKino(cfg config.Config) (*uakino.Client, error) {
+func newUAKino(cfg config.Config) (source.Source, error) {
 	return uakino.New(uakino.Options{
 		BaseURL:     cfg.UAKino.BaseURL,
 		RPS:         cfg.UAKino.RPS,

@@ -38,7 +38,7 @@ addfile → Queued → Downloading → Completed
    | Thomas Crown Affair (`vod/128413`) | 6797.08 s | +0.05 s | +0.21 s |
 
    The shortest segment is about 4.6 s, so 2 s still catches a lost segment. Single segments do not match their `EXTINF` (off by up to 2 s), only whole streams do. Tests with 2–3 segments use the probed durations as `EXTINF`.
-6. **Publish.** fsync the file and the staging folder, then rename `/data/incomplete/<jobId>` to `/data/downloads/<jobId>`. Mark `Completed` with `storage=/data/downloads/<jobId>`.
+6. **Publish.** fsync the file and the staging folder, then rename `/data/incomplete/<jobId>` to `/data/downloads/<jobId>`. Mark `Completed` with `storage=/data/downloads/<jobId>`. The worker retries a failed status write until Redis answers.
 
 Progress for `queue`: completed segments and bytes against the playlist total and the size estimate.
 

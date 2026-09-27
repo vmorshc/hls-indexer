@@ -138,14 +138,15 @@ func (s *Store) Claim(ctx context.Context, wait time.Duration) (Job, bool, error
 	return j, err == nil, err
 }
 
-// Requeue puts every Downloading job back in the queue. The worker calls it at start.
+// Requeue puts every Downloading job back in the queue and re-adds Queued jobs
+// a crash dropped between pop and status update. The worker calls it at start.
 func (s *Store) Requeue(ctx context.Context) error {
 	active, err := s.list(ctx, activeKey, false)
 	if err != nil {
 		return err
 	}
 	for _, j := range active {
-		if j.Status != Downloading {
+		if j.Status != Downloading && j.Status != Queued {
 			continue
 		}
 		_, err := s.rdb.TxPipelined(ctx, func(p redis.Pipeliner) error {
