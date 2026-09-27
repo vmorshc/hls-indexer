@@ -44,7 +44,7 @@ internal/downloader/      HLS → MKV worker
 
 ## Tests
 
-- HTTP API (S1): use `internal/testenv`. It runs the API in-process and plugs fake UAKino and TMDb servers. `Options.Worker` also runs the worker on the test Redis from `TEST_REDIS_URL` (`docker compose up -d redis-test`). `testenv.Redis` flushes it. Tests that need Redis skip when the env var is unset.
+- HTTP API (S1): use `internal/testenv`. It runs the API in-process and plugs fake UAKino and TMDb servers. `Options.Worker` also runs the worker on the test Redis from `TEST_REDIS_URL` (`docker compose up -d redis-test`). Each test package claims its own database there, so packages run in parallel. `testenv.Redis` flushes that database. Tests that need Redis skip when the env var is unset.
 - Source parsers: HTML fixtures in `testdata/`. Live mode (`UAKINO_LIVE=1`) fetches fresh HTML for the test titles, parses it and overwrites the fixtures.
 - Helpers (`internal/release`, title parsing, conversions): table tests for the base scenarios only.
 - Video pipeline: input is 2–3 real segments of the lowest variant, never a whole episode, served by a local test server. The golden file stores the `ffprobe` summary of the output MKV: tracks, codecs, languages, duration, packet counts. Rewrite goldens with `go test ./internal/downloader -update` (only that package defines the flag).

@@ -5,13 +5,17 @@ package testenv
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -52,19 +56,24 @@ type Env struct {
 	Redis *redis.Client
 }
 
-// RedisURL returns the test Redis URL or skips the test when it is unset.
-// It does not flush. Call Redis first when the test touches data.
+// RedisURL returns the URL of this test process's database on the test Redis
+// or skips the test when TEST_REDIS_URL is unset. It does not flush. Call Redis
+// first when the test touches data.
 func RedisURL(t testing.TB) string {
 	t.Helper()
-	u := os.Getenv(RedisURLEnv)
-	if u == "" {
+	base := os.Getenv(RedisURLEnv)
+	if base == "" {
 		t.Skipf("%s is unset: run `docker compose up -d redis-test` and export %s=redis://localhost:6380/0", RedisURLEnv, RedisURLEnv)
 	}
-	return u
+	claim.once.Do(func() { claim.url, claim.err = claimDB(base) })
+	if claim.err != nil {
+		t.Fatalf("%s: %v", RedisURLEnv, claim.err)
+	}
+	return claim.url
 }
 
-// Redis connects to the test Redis and flushes it. It skips the test when
-// TEST_REDIS_URL is unset.
+// Redis connects to this test process's database and flushes it. It skips the
+// test when TEST_REDIS_URL is unset.
 func Redis(t testing.TB) *redis.Client {
 	t.Helper()
 	opts, err := redis.ParseURL(RedisURL(t))
@@ -77,6 +86,65 @@ func Redis(t testing.TB) *redis.Client {
 		t.Fatalf("flush test redis: %v", err)
 	}
 	return c
+}
+
+// Each test binary (one per package under `go test ./...`) claims its own
+// database, so packages run in parallel without sharing keys. The claims live
+// in the database from TEST_REDIS_URL, which tests never use for data. A claim
+// expires lockTTL after its process exits.
+var claim struct {
+	once sync.Once
+	url  string
+	err  error
+}
+
+const (
+	lockPrefix  = "hls-indexer-test:db:"
+	lockTTL     = 10 * time.Second
+	lockRefresh = 2 * time.Second
+)
+
+func claimDB(base string) (string, error) {
+	opts, err := redis.ParseURL(base)
+	if err != nil {
+		return "", err
+	}
+	u, err := url.Parse(base)
+	if err != nil {
+		return "", err
+	}
+	c := redis.NewClient(opts)
+	ctx := context.Background()
+	n := 16
+	if v, err := c.ConfigGet(ctx, "databases").Result(); err == nil {
+		if d, err := strconv.Atoi(v["databases"]); err == nil {
+			n = d
+		}
+	}
+	token := fmt.Sprintf("%d-%d", os.Getpid(), time.Now().UnixNano())
+	for db := 0; db < n; db++ {
+		if db == opts.DB {
+			continue
+		}
+		key := lockPrefix + strconv.Itoa(db)
+		ok, err := c.SetNX(ctx, key, token, lockTTL).Result()
+		if err != nil {
+			c.Close()
+			return "", fmt.Errorf("claim database: %w", err)
+		}
+		if !ok {
+			continue
+		}
+		go func() {
+			for range time.Tick(lockRefresh) {
+				c.Expire(ctx, key, lockTTL)
+			}
+		}()
+		u.Path = "/" + strconv.Itoa(db)
+		return u.String(), nil
+	}
+	c.Close()
+	return "", fmt.Errorf("all %d databases are claimed by other test processes", n-1)
 }
 
 // Start builds the config, starts the fakes, the API and optionally the worker.

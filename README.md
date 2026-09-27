@@ -102,7 +102,7 @@ Mount `/data` at the same path in *arr and HLS Indexer.
 
 ## Tests
 
-Tests that need Redis use the separate test Redis from compose and flush it before each test. Without `TEST_REDIS_URL` they skip.
+Tests that need Redis use the separate test Redis from compose. Each test package claims its own database there and flushes it before each test, so packages run in parallel. Without `TEST_REDIS_URL` they skip.
 
 ```sh
 docker compose up -d redis-test                        # test Redis on localhost:6380
