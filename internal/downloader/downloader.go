@@ -128,6 +128,10 @@ func (w *Worker) process(ctx context.Context, j jobs.Job, stage string) (string,
 	if err != nil {
 		return "", 0, err
 	}
+	subs, err := w.Pipeline.Subtitles(ctx, stream.Subtitles)
+	if err != nil {
+		return "", 0, err
+	}
 	size := source.Media{Bandwidth: best.Bandwidth, Duration: media.Duration()}.Size()
 	if err := w.Jobs.Start(ctx, j.ID, len(media.Segments), size); err != nil {
 		return "", 0, err
@@ -147,7 +151,7 @@ func (w *Worker) process(ctx context.Context, j jobs.Job, stage string) (string,
 			w.Log.Warn("progress", "job", j.ID, "err", err)
 		}
 	}
-	if err := w.Pipeline.Mux(ctx, media, out, progress); err != nil {
+	if err := w.Pipeline.Mux(ctx, media, subs, out, progress); err != nil {
 		return "", 0, err
 	}
 	return w.publish(stage, j.ID)

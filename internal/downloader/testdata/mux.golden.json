@@ -5,6 +5,7 @@
       "Type": "video",
       "Codec": "h264",
       "Language": "",
+      "Title": "",
       "Duration": "15.3",
       "Packets": 366
     },
@@ -12,8 +13,25 @@
       "Type": "audio",
       "Codec": "aac",
       "Language": "ukr",
+      "Title": "",
       "Duration": "15.2",
       "Packets": 656
+    },
+    {
+      "Type": "subtitle",
+      "Codec": "subrip",
+      "Language": "ukr",
+      "Title": "Українські",
+      "Duration": "13.9",
+      "Packets": 3
+    },
+    {
+      "Type": "subtitle",
+      "Codec": "subrip",
+      "Language": "eng",
+      "Title": "Англійські",
+      "Duration": "8.2",
+      "Packets": 2
     }
   ]
 }

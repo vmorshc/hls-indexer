@@ -261,6 +261,18 @@ func parsePlayer(html string) (player, error) {
 	return p, nil
 }
 
+// subtitleLanguage maps a player subtitle label to an ISO 639-2 code, "" if unknown.
+func subtitleLanguage(label string) string {
+	l := strings.ToLower(label)
+	switch {
+	case strings.HasPrefix(l, "укр"):
+		return "ukr"
+	case strings.HasPrefix(l, "англ"), strings.HasPrefix(l, "eng"):
+		return "eng"
+	}
+	return ""
+}
+
 func seasonNumber(s string) int {
 	m := seasonRe.FindStringSubmatch(s)
 	if m == nil {

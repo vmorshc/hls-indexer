@@ -59,7 +59,7 @@ Items: `.playlists-videos .playlists-items li[data-file]`. Skip `li` without `da
 `GET https://ashdi.vip/vod/<id>`. The HTML contains `new Playerjs({...})`:
 
 - `file`: master m3u8 URL.
-- `subtitle`: `[Label]url,[Label]url`, e.g. `[Українські]https://ashdi.vip/player/subtitle/83766_ua.vtt`. Often empty.
+- `subtitle`: `[Label]url,[Label]url`, e.g. `[Українські]https://ashdi.vip/player/subtitle/83766_ua.vtt`. Often empty. Labels seen: `Українські`, `Англійські`. Language: a label starting with `укр` → `ukr`, `англ` or `eng` → `eng` (case-insensitive), else none.
 - `poster`: image URL.
 
 Other player hosts are untested.

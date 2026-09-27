@@ -7,49 +7,106 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/vmorshc/hls-indexer/internal/hls"
+	"github.com/vmorshc/hls-indexer/internal/source"
 )
 
 // DurationTolerance is the allowed gap between each track's duration and the
 // sum of EXTINF. Calibrated on real UAKino streams, see docs/architecture/downloader.md.
 const DurationTolerance = 2.0
 
+// Subtitle is one subtitle track ready for the mux.
+type Subtitle struct {
+	Language string // ISO 639-2, empty if unknown
+	Title    string
+	SRT      []byte
+}
+
+// Subtitles downloads each VTT with the segment retries and converts it to SRT.
+func (p Pipeline) Subtitles(ctx context.Context, subs []source.Subtitle) ([]Subtitle, error) {
+	var out []Subtitle
+	for _, s := range subs {
+		vtt, err := p.segment(ctx, s.URL)
+		if err != nil {
+			return nil, fmt.Errorf("subtitle %q: %w", s.Label, err)
+		}
+		srt, err := vttToSRT(vtt)
+		if err != nil {
+			return nil, fmt.Errorf("subtitle %q: %w", s.Label, err)
+		}
+		out = append(out, Subtitle{Language: s.Language, Title: s.Label, SRT: srt})
+	}
+	return out, nil
+}
+
 // Mux downloads the segments in parallel and writes them to ffmpeg's stdin in
-// playlist order. Segments stay in memory. progress gets the count of written
-// segments and the size of the last one. Mux validates the output.
-func (p Pipeline) Mux(ctx context.Context, m hls.Media, out string, progress func(done int, n int64)) error {
+// playlist order. Segments stay in memory. Each subtitle goes to ffmpeg through
+// its own pipe: pipe:3, pipe:4, … progress gets the count of written segments
+// and the size of the last one. Mux validates the output.
+func (p Pipeline) Mux(ctx context.Context, m hls.Media, subs []Subtitle, out string, progress func(done int, n int64)) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	var stderr bytes.Buffer
-	cmd := exec.CommandContext(ctx, p.FFmpeg,
-		"-hide_banner", "-nostdin", "-loglevel", "error",
-		"-f", "mpegts", "-i", "pipe:0",
-		"-map", "0:v:0", "-map", "0:a:0", "-c", "copy",
-		"-metadata:s:a:0", "language=ukr",
-		"-f", "matroska", "-y", out)
+	cmd := exec.CommandContext(ctx, p.FFmpeg, muxArgs(subs, out)...)
 	cmd.Stderr = &limitedWriter{buf: &stderr, max: 4096}
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return err
 	}
-	if err := cmd.Start(); err != nil {
+	var writers []*os.File
+	defer func() {
+		for _, w := range writers {
+			w.Close()
+		}
+	}()
+	for range subs {
+		r, w, err := os.Pipe()
+		if err != nil {
+			return err
+		}
+		cmd.ExtraFiles = append(cmd.ExtraFiles, r)
+		writers = append(writers, w)
+	}
+	err = cmd.Start()
+	for _, r := range cmd.ExtraFiles {
+		r.Close() // ffmpeg holds its own copies
+	}
+	if err != nil {
 		return fmt.Errorf("ffmpeg: %w", err)
 	}
 
+	subErrs := make([]error, len(subs))
+	var wg sync.WaitGroup
+	for i, w := range writers {
+		wg.Go(func() {
+			if _, err := w.Write(subs[i].SRT); err != nil {
+				subErrs[i] = fmt.Errorf("ffmpeg pipe:%d: %w", i+3, err)
+			}
+			w.Close()
+		})
+	}
 	ledger, writeErr := p.feed(ctx, m, stdin, progress)
 	stdin.Close()
 	if writeErr != nil {
 		cancel()
 		cmd.Wait()
+		wg.Wait()
 		return writeErr
 	}
-	if err := cmd.Wait(); err != nil {
-		return fmt.Errorf("ffmpeg: %v: %s", err, strings.TrimSpace(stderr.String()))
+	waitErr := cmd.Wait()
+	wg.Wait()
+	if waitErr != nil {
+		return fmt.Errorf("ffmpeg: %v: %s", waitErr, strings.TrimSpace(stderr.String()))
+	}
+	if err := errors.Join(subErrs...); err != nil {
+		return err
 	}
 	if ledger != len(m.Segments) {
 		return fmt.Errorf("ledger: %d of %d segments written", ledger, len(m.Segments))
@@ -58,7 +115,30 @@ func (p Pipeline) Mux(ctx context.Context, m hls.Media, out string, progress fun
 	if err != nil {
 		return err
 	}
-	return pr.Validate(m.Duration())
+	return pr.Validate(m.Duration(), len(subs))
+}
+
+// muxArgs maps the first video and audio track of pipe:0 and one SRT track
+// per subtitle pipe, all stream copy.
+func muxArgs(subs []Subtitle, out string) []string {
+	args := []string{"-hide_banner", "-nostdin", "-loglevel", "error", "-f", "mpegts", "-i", "pipe:0"}
+	for i := range subs {
+		args = append(args, "-f", "srt", "-i", fmt.Sprintf("pipe:%d", i+3))
+	}
+	args = append(args, "-map", "0:v:0", "-map", "0:a:0")
+	for i := range subs {
+		args = append(args, "-map", fmt.Sprintf("%d:s:0", i+1))
+	}
+	args = append(args, "-c", "copy", "-metadata:s:a:0", "language=ukr")
+	for i, s := range subs {
+		if s.Language != "" {
+			args = append(args, fmt.Sprintf("-metadata:s:s:%d", i), "language="+s.Language)
+		}
+		if s.Title != "" {
+			args = append(args, fmt.Sprintf("-metadata:s:s:%d", i), "title="+s.Title)
+		}
+	}
+	return append(args, "-f", "matroska", "-y", out)
 }
 
 type result struct {
@@ -136,6 +216,7 @@ type Track struct {
 	Type     string // video, audio, subtitle
 	Codec    string
 	Language string
+	Title    string
 	Duration float64 // seconds
 	Packets  int
 }
@@ -149,7 +230,7 @@ type Probe struct {
 // Probe runs ffprobe with packet counts.
 func (p Pipeline) Probe(ctx context.Context, file string) (Probe, error) {
 	out, err := exec.CommandContext(ctx, p.FFprobe, "-v", "error", "-count_packets",
-		"-show_entries", "format=duration:stream=codec_type,codec_name,nb_read_packets:stream_tags=language,DURATION",
+		"-show_entries", "format=duration:stream=codec_type,codec_name,nb_read_packets:stream_tags=language,title,DURATION",
 		"-of", "json", file).Output()
 	if err != nil {
 		return Probe{}, fmt.Errorf("ffprobe: %w", err)
@@ -173,7 +254,7 @@ func (p Pipeline) Probe(ctx context.Context, file string) (Probe, error) {
 	for _, s := range raw.Streams {
 		n, _ := strconv.Atoi(s.Packets)
 		pr.Tracks = append(pr.Tracks, Track{
-			Type: s.CodecType, Codec: s.CodecName, Language: s.Tags["language"],
+			Type: s.CodecType, Codec: s.CodecName, Language: s.Tags["language"], Title: s.Tags["title"],
 			Duration: clock(s.Tags["DURATION"]), Packets: n,
 		})
 	}
@@ -192,8 +273,9 @@ func clock(s string) float64 {
 	return float64(h*3600+m*60) + sec
 }
 
-// Validate checks 1 video and 1 audio track, each within DurationTolerance of want.
-func (pr Probe) Validate(want float64) error {
+// Validate checks 1 video and 1 audio track, each within DurationTolerance of
+// want, and subs subtitle tracks.
+func (pr Probe) Validate(want float64, subs int) error {
 	count := map[string]int{}
 	for _, t := range pr.Tracks {
 		count[t.Type]++
@@ -206,6 +288,9 @@ func (pr Probe) Validate(want float64) error {
 	}
 	if count["video"] != 1 || count["audio"] != 1 {
 		return fmt.Errorf("validate: %d video and %d audio tracks, want 1 and 1", count["video"], count["audio"])
+	}
+	if count["subtitle"] != subs {
+		return fmt.Errorf("validate: %d subtitle tracks, want %d", count["subtitle"], subs)
 	}
 	return nil
 }

@@ -16,14 +16,14 @@ addfile → Queued → Downloading → Completed
 
 ## Pipeline
 
-1. **Resolve.** Decode the release ID, load the title page and find the voice (by hash) and episode. Call `Source.Resolve`. It returns the master m3u8, subtitle URLs and labels. Pick the best variant and read the media playlist. A playlist without `EXT-X-ENDLIST` fails.
+1. **Resolve.** Decode the release ID, load the title page and find the voice (by hash) and episode. Call `Source.Resolve`. It returns the master m3u8 and subtitle tracks: VTT URL, label and language. Pick the best variant and read the media playlist. A playlist without `EXT-X-ENDLIST` fails. Download each VTT (same retries as segments) and convert it to SRT in Go. A subtitle that fails to download or parse fails the job.
 2. **Probe.** Run `ffprobe` on the first segment. H.264 video and AAC audio get stream copy. Other codecs get a re-encode to H.264 and AAC. *Not built yet: v0 always stream-copies.*
 3. **Download.** Fetch segments in parallel (`worker.segment_concurrency`, default 8). At most that many segments sit in memory. A segment is complete when the status is 200 and the body matches `Content-Length`. v0 tries each segment 5 times (backoff 1 s, doubled). Never skip a segment.
-4. **Mux.** Start `ffmpeg` as a subprocess. Write segments to `pipe:0` in playlist order. Map the first video and first audio track, stream copy, audio language `ukr`. Output: `/data/incomplete/<jobId>/<release title>.mkv`. No segment files touch the disk. *Not built yet:* convert each VTT to SRT in Go and feed it through its own pipe (`pipe:3`, `pipe:4`, …) with language (`ukr`, `eng`) and title from the source label.
+4. **Mux.** Start `ffmpeg` as a subprocess. Write segments to `pipe:0` in playlist order. Write each SRT to its own pipe (`pipe:3`, `pipe:4`, …, ffmpeg's extra file descriptors). Map the first video and first audio track and one subtitle track per pipe, stream copy, audio language `ukr`. A subtitle track gets the source's language (`ukr`, `eng`, none if unknown) and the source label as title. Output: `/data/incomplete/<jobId>/<release title>.mkv`. No segment or subtitle files touch the disk.
 5. **Validate.** All of these must pass:
    - The ledger shows every segment written.
    - `ffmpeg` exited 0.
-   - `ffprobe` shows 1 video and 1 audio track (subtitle tracks come with subtitle muxing).
+   - `ffprobe` shows 1 video, 1 audio and one subtitle track per source subtitle. Subtitle durations are not checked.
    - Each track's duration (MKV `DURATION` tag) is within **2 s** of the sum of `EXTINF`.
 
    `ffmpeg` exits 0 on premature input EOF, so the exit code alone proves nothing.

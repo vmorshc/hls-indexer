@@ -248,3 +248,18 @@ func TestParseHLS(t *testing.T) {
 		t.Errorf("media: %d segments, %.3f s, ended %v", len(m.Segments), m.Duration(), m.Ended)
 	}
 }
+
+func TestSubtitleLanguage(t *testing.T) {
+	for label, want := range map[string]string{
+		"Українські": "ukr",
+		"Українська": "ukr",
+		"Англійські": "eng",
+		"English":    "eng",
+		"Польські":   "",
+		"":           "",
+	} {
+		if got := subtitleLanguage(label); got != want {
+			t.Errorf("subtitleLanguage(%q) = %q, want %q", label, got, want)
+		}
+	}
+}

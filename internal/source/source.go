@@ -92,8 +92,9 @@ type Stream struct {
 	Subtitles []Subtitle
 }
 
-// Subtitle is one external subtitle track.
+// Subtitle is one external WebVTT subtitle track.
 type Subtitle struct {
-	Label string
-	URL   string
+	Label    string // track title, as the source shows it
+	Language string // ISO 639-2 code, e.g. "ukr", "eng"; empty if unknown
+	URL      string
 }

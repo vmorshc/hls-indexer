@@ -12,7 +12,7 @@ import (
 )
 
 // FakeUAKino serves the UAKino fixtures from internal/source/uakino/testdata:
-// site search, title pages, playlists, player pages and HLS playlists. Player
+// site search, title pages, playlists, player pages, HLS playlists and VTT. Player
 // and CDN links point back to the fake itself.
 type FakeUAKino struct {
 	mu       sync.Mutex
@@ -79,6 +79,7 @@ var (
 	ashdiRe   = regexp.MustCompile(`([a-z0-9]+\.)*ashdi\.vip`)
 	titleIDRe = regexp.MustCompile(`^/(?:[a-z_]+/)*(\d+)-[a-z0-9_-]*\.html$`)
 	vodRe     = regexp.MustCompile(`^/vod/(\d+)$`)
+	vttRe     = regexp.MustCompile(`^/player/subtitle/([\w-]+)\.vtt$`)
 )
 
 func (f *FakeUAKino) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -117,6 +118,12 @@ func (f *FakeUAKino) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			file = "player-51968.html"
 		}
 		f.serve(w, r, file, nil)
+	case vttRe.MatchString(p):
+		file := "subtitle-" + vttRe.FindStringSubmatch(p)[1] + ".vtt"
+		if _, err := os.Stat(filepath.Join(uakinoFixtures(), file)); err != nil {
+			file = "subtitle-83766_ua.vtt"
+		}
+		http.ServeFile(w, r, filepath.Join(uakinoFixtures(), file))
 	case strings.HasSuffix(p, ".m3u8") && regexp.MustCompile(`/hls/\d+/`).MatchString(p):
 		if f.Segments {
 			w.Write([]byte(shortMedia))

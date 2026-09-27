@@ -100,7 +100,7 @@ func (c *Client) Resolve(ctx context.Context, ep source.Episode) (source.Stream,
 	}
 	s := source.Stream{Master: absURL(final, p.File)}
 	for _, sub := range p.Subtitles {
-		s.Subtitles = append(s.Subtitles, source.Subtitle{Label: sub.Label, URL: absURL(final, sub.URL)})
+		s.Subtitles = append(s.Subtitles, source.Subtitle{Label: sub.Label, Language: subtitleLanguage(sub.Label), URL: absURL(final, sub.URL)})
 	}
 	return s, nil
 }
