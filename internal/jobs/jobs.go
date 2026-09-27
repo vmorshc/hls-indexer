@@ -30,6 +30,7 @@ func dedupKey(category, rel string) string { return Prefix + "dedup:" + category
 // Status values match the SABnzbd names.
 const (
 	Queued      = "Queued"
+	Paused      = "Paused"
 	Downloading = "Downloading"
 	Completed   = "Completed"
 	Failed      = "Failed"
@@ -53,6 +54,9 @@ type Job struct {
 	Category string
 	Priority int
 	Status   string
+	// Run counts claims. Worker writes carry it and apply only while it is
+	// current, so a paused, resumed or deleted job ignores a stale run.
+	Run      int64
 	Created  time.Time
 	Started  time.Time
 	Finished time.Time
@@ -76,19 +80,22 @@ type Store struct {
 func New(rdb *redis.Client) *Store { return &Store{rdb: rdb, now: time.Now} }
 
 // createScript stores a job unless the same release is active in the category.
-// It returns the ID of the job that owns the release.
+// It returns the ID of the job that owns the release. An empty queue score
+// (paused job) keeps the job out of the queue.
 var createScript = redis.NewScript(`
 local existing = redis.call('GET', KEYS[1])
 if existing then return existing end
 redis.call('SET', KEYS[1], ARGV[1])
 redis.call('HSET', KEYS[2], unpack(ARGV, 4))
-redis.call('ZADD', KEYS[3], ARGV[2], ARGV[1])
+if ARGV[2] ~= '' then redis.call('ZADD', KEYS[3], ARGV[2], ARGV[1]) end
 redis.call('ZADD', KEYS[4], ARGV[3], ARGV[1])
 return ARGV[1]
 `)
 
-// Add persists a new job and enqueues it. When the same release is already
-// active in the same category it returns the existing job ID.
+// Add persists a new job and enqueues it. Priority -100 is stored as normal.
+// Priority -2 stores the job Paused and out of the queue until Resume. When the
+// same release is already active in the same category it returns the existing
+// job ID.
 func (s *Store) Add(ctx context.Context, rel, title, category string, priority int) (string, error) {
 	id, err := newID()
 	if err != nil {
@@ -98,13 +105,72 @@ func (s *Store) Add(ctx context.Context, rel, title, category string, priority i
 		priority = PriorityNormal
 	}
 	now := s.now()
-	args := []any{id, queueScore(priority, now), now.UnixMilli()}
+	status, score := Queued, any(queueScore(priority, now))
+	if priority == PriorityPaused {
+		status, score = Paused, ""
+	}
+	args := []any{id, score, now.UnixMilli()}
 	args = append(args, fields(Job{
 		ID: id, Release: rel, Title: title, Category: category,
-		Priority: priority, Status: Queued, Created: now,
+		Priority: priority, Status: status, Created: now,
 	})...)
 	return createScript.Run(ctx, s.rdb,
 		[]string{dedupKey(category, rel), jobKey(id), queueKey, activeKey}, args...).Text()
+}
+
+// pauseScript pauses a Queued or Downloading job and takes it out of the
+// queue. The worker sees the status change and stops the run.
+var pauseScript = redis.NewScript(`
+local st = redis.call('HGET', KEYS[1], 'status')
+if st == 'Queued' or st == 'Downloading' then
+  redis.call('HSET', KEYS[1], 'status', 'Paused')
+  redis.call('ZREM', KEYS[2], ARGV[1])
+  return 1
+end
+if st == 'Paused' then return 1 end
+return 0
+`)
+
+// Pause pauses one active job. A paused job stays paused. It returns
+// ErrNotFound unless the job is active. The API calls it.
+func (s *Store) Pause(ctx context.Context, id string) error {
+	ok, err := pauseScript.Run(ctx, s.rdb, []string{jobKey(id), queueKey}, id).Bool()
+	if err == nil && !ok {
+		err = ErrNotFound
+	}
+	return err
+}
+
+// resumeScript queues a Paused job again with priority ARGV[2] and score ARGV[3].
+var resumeScript = redis.NewScript(`
+local st = redis.call('HGET', KEYS[1], 'status')
+if st == 'Paused' then
+  redis.call('HSET', KEYS[1], 'status', 'Queued', 'priority', ARGV[2])
+  redis.call('ZADD', KEYS[2], ARGV[3], ARGV[1])
+  return 1
+end
+if st == 'Queued' or st == 'Downloading' then return 1 end
+return 0
+`)
+
+// Resume queues a Paused job again. A job added with priority -2 resumes with
+// normal priority, as in SABnzbd. Resuming a queued or running job does
+// nothing. It returns ErrNotFound unless the job is active. The API calls it.
+func (s *Store) Resume(ctx context.Context, id string) error {
+	j, err := s.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	p := j.Priority
+	if p == PriorityPaused {
+		p = PriorityNormal
+	}
+	ok, err := resumeScript.Run(ctx, s.rdb, []string{jobKey(id), queueKey},
+		id, p, queueScore(p, j.Created)).Bool()
+	if err == nil && !ok {
+		err = ErrNotFound
+	}
+	return err
 }
 
 // queueScore orders the queue: higher priority first, then oldest first.
@@ -120,6 +186,15 @@ func newID() (string, error) {
 	return "hls_" + hex.EncodeToString(b), nil
 }
 
+// claimScript marks a popped job Downloading and starts a new run. A job the
+// API paused after the pop stays paused.
+var claimScript = redis.NewScript(`
+if redis.call('HGET', KEYS[1], 'status') ~= 'Queued' then return false end
+redis.call('HSET', KEYS[1], 'status', 'Downloading', 'started', ARGV[1],
+  'segments_total', 0, 'segments_done', 0, 'bytes_done', 0, 'size_estimate', 0)
+return redis.call('HINCRBY', KEYS[1], 'run', 1)
+`)
+
 // Claim waits up to wait for a queued job, marks it Downloading and returns it.
 // ok is false when nothing arrived in time.
 func (s *Store) Claim(ctx context.Context, wait time.Duration) (Job, bool, error) {
@@ -131,29 +206,37 @@ func (s *Store) Claim(ctx context.Context, wait time.Duration) (Job, bool, error
 		return Job{}, false, err
 	}
 	id := res.Member.(string)
-	if err := s.rdb.HSet(ctx, jobKey(id), "status", Downloading, "started", s.now().UnixMilli()).Err(); err != nil {
+	err = claimScript.Run(ctx, s.rdb, []string{jobKey(id)}, s.now().UnixMilli()).Err()
+	if errors.Is(err, redis.Nil) {
+		return Job{}, false, nil
+	}
+	if err != nil {
 		return Job{}, false, err
 	}
 	j, err := s.Get(ctx, id)
 	return j, err == nil, err
 }
 
+// requeueScript queues a Downloading or Queued job again with score ARGV[2].
+var requeueScript = redis.NewScript(`
+local st = redis.call('HGET', KEYS[1], 'status')
+if st ~= 'Downloading' and st ~= 'Queued' then return 0 end
+redis.call('HSET', KEYS[1], 'status', 'Queued', 'segments_done', 0, 'bytes_done', 0)
+redis.call('ZADD', KEYS[2], ARGV[2], ARGV[1])
+return 1
+`)
+
 // Requeue puts every Downloading job back in the queue and re-adds Queued jobs
-// a crash dropped between pop and status update. The worker calls it at start.
+// a crash dropped between pop and claim. Paused jobs stay paused. The worker
+// calls it at start.
 func (s *Store) Requeue(ctx context.Context) error {
 	active, err := s.list(ctx, activeKey, false)
 	if err != nil {
 		return err
 	}
 	for _, j := range active {
-		if j.Status != Downloading && j.Status != Queued {
-			continue
-		}
-		_, err := s.rdb.TxPipelined(ctx, func(p redis.Pipeliner) error {
-			p.HSet(ctx, jobKey(j.ID), "status", Queued, "segments_done", 0, "bytes_done", 0)
-			p.ZAdd(ctx, queueKey, redis.Z{Score: queueScore(j.Priority, j.Created), Member: j.ID})
-			return nil
-		})
+		err := requeueScript.Run(ctx, s.rdb, []string{jobKey(j.ID), queueKey},
+			j.ID, queueScore(j.Priority, j.Created)).Err()
 		if err != nil {
 			return err
 		}
@@ -161,42 +244,75 @@ func (s *Store) Requeue(ctx context.Context) error {
 	return nil
 }
 
+// setRunScript writes job fields only while run ARGV[1] is current.
+var setRunScript = redis.NewScript(`
+if redis.call('HGET', KEYS[1], 'run') ~= ARGV[1] then return 0 end
+redis.call('HSET', KEYS[1], unpack(ARGV, 2))
+return 1
+`)
+
+func (s *Store) setRun(ctx context.Context, j Job, values ...any) error {
+	return setRunScript.Run(ctx, s.rdb, []string{jobKey(j.ID)}, append([]any{j.Run}, values...)...).Err()
+}
+
 // Start records the stream size once the media playlist is read.
-func (s *Store) Start(ctx context.Context, id string, segments int, sizeEstimate int64) error {
-	return s.rdb.HSet(ctx, jobKey(id), "segments_total", segments, "size_estimate", sizeEstimate,
-		"segments_done", 0, "bytes_done", 0).Err()
+func (s *Store) Start(ctx context.Context, j Job, segments int, sizeEstimate int64) error {
+	return s.setRun(ctx, j, "segments_total", segments, "size_estimate", sizeEstimate,
+		"segments_done", 0, "bytes_done", 0)
 }
 
 // Progress records written segments and bytes.
-func (s *Store) Progress(ctx context.Context, id string, segments int, bytes int64) error {
-	return s.rdb.HSet(ctx, jobKey(id), "segments_done", segments, "bytes_done", bytes).Err()
+func (s *Store) Progress(ctx context.Context, j Job, segments int, bytes int64) error {
+	return s.setRun(ctx, j, "segments_done", segments, "bytes_done", bytes)
 }
 
-// Complete moves the job to history as Completed.
-func (s *Store) Complete(ctx context.Context, id, storage string, bytes int64) error {
-	return s.finish(ctx, id, "status", Completed, "storage", storage, "bytes", bytes)
-}
-
-// Fail moves the job to history as Failed.
-func (s *Store) Fail(ctx context.Context, id, message string) error {
-	return s.finish(ctx, id, "status", Failed, "fail_message", message)
-}
-
-func (s *Store) finish(ctx context.Context, id string, values ...any) error {
-	j, err := s.Get(ctx, id)
-	if err != nil {
-		return err
+// Current reports whether run j is still the job's live run: the job exists,
+// is Downloading and nobody claimed it again.
+func (s *Store) Current(ctx context.Context, j Job) (bool, error) {
+	cur, err := s.Get(ctx, j.ID)
+	if errors.Is(err, ErrNotFound) {
+		return false, nil
 	}
-	now := s.now()
-	_, err = s.rdb.TxPipelined(ctx, func(p redis.Pipeliner) error {
-		p.HSet(ctx, jobKey(id), append(values, "finished", now.UnixMilli())...)
-		p.ZRem(ctx, activeKey, id)
-		p.ZRem(ctx, queueKey, id)
-		p.ZAdd(ctx, historyKey, redis.Z{Score: float64(now.UnixMilli()), Member: id})
-		p.Del(ctx, dedupKey(j.Category, j.Release))
-		return nil
-	})
-	return err
+	return err == nil && cur.Status == Downloading && cur.Run == j.Run, err
+}
+
+// Complete moves the job to history as Completed. ok is false when the run is
+// no longer current (paused, resumed or deleted) and nothing changed.
+func (s *Store) Complete(ctx context.Context, j Job, storage string, bytes int64) (ok bool, err error) {
+	return s.finish(ctx, j, "status", Completed, "storage", storage, "bytes", bytes)
+}
+
+// Fail moves the job to history as Failed. ok is as in Complete.
+func (s *Store) Fail(ctx context.Context, j Job, message string) (ok bool, err error) {
+	return s.finish(ctx, j, "status", Failed, "fail_message", message)
+}
+
+// finishScript moves a job to history if run ARGV[1] is the live run.
+var finishScript = redis.NewScript(`
+if redis.call('HGET', KEYS[1], 'status') ~= 'Downloading' or redis.call('HGET', KEYS[1], 'run') ~= ARGV[1] then
+  return 0
+end
+redis.call('HSET', KEYS[1], unpack(ARGV, 4))
+redis.call('ZREM', KEYS[2], ARGV[2])
+redis.call('ZREM', KEYS[3], ARGV[2])
+redis.call('ZADD', KEYS[4], ARGV[3], ARGV[2])
+if redis.call('GET', KEYS[5]) == ARGV[2] then redis.call('DEL', KEYS[5]) end
+return 1
+`)
+
+func (s *Store) finish(ctx context.Context, j Job, values ...any) (bool, error) {
+	cur, err := s.Get(ctx, j.ID)
+	if errors.Is(err, ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	now := s.now().UnixMilli()
+	args := append([]any{j.Run, j.ID, now}, append(values, "finished", now)...)
+	return finishScript.Run(ctx, s.rdb,
+		[]string{jobKey(j.ID), activeKey, queueKey, historyKey, dedupKey(cur.Category, cur.Release)},
+		args...).Bool()
 }
 
 // Retry queues a failed job again as a new job and drops the failed one from
@@ -325,7 +441,7 @@ func parse(m map[string]string) Job {
 	}
 	return Job{
 		ID: m["id"], Release: m["release"], Title: m["title"], Category: m["category"],
-		Priority: int(i("priority")), Status: m["status"],
+		Priority: int(i("priority")), Status: m["status"], Run: i("run"),
 		Created: t("created"), Started: t("started"), Finished: t("finished"),
 		SegmentsTotal: int(i("segments_total")), SegmentsDone: int(i("segments_done")),
 		BytesDone: i("bytes_done"), SizeEstimate: i("size_estimate"),

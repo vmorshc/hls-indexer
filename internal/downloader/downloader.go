@@ -4,6 +4,7 @@
 package downloader
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -33,10 +34,19 @@ type Worker struct {
 	Parallel int
 	Pipeline Pipeline
 	Log      *slog.Logger
+	// Watch is how often a run checks that its job is still Downloading.
+	// Zero means 1 s.
+	Watch time.Duration
+
+	mu      sync.Mutex
+	running map[string]chan struct{} // job ID → closed when its run ends
 }
 
 // claimWait bounds one blocking claim so the worker notices ctx cancel.
 const claimWait = time.Second
+
+// errStopped cancels a run whose job the API paused or dropped.
+var errStopped = errors.New("job stopped")
 
 // Run re-queues jobs a previous run left in Downloading, then processes jobs
 // until ctx ends.
@@ -64,32 +74,105 @@ func (w *Worker) loop(ctx context.Context) {
 			continue
 		}
 		if ok {
+			done := w.exclusive(j.ID)
 			w.run(ctx, j)
+			done()
 		}
 	}
 }
 
+// exclusive waits until no other run of job id is active here and marks id
+// running. A job paused and resumed at once can be claimed again before its
+// old run noticed. The returned func ends the mark.
+func (w *Worker) exclusive(id string) func() {
+	for {
+		w.mu.Lock()
+		prev, busy := w.running[id]
+		if !busy {
+			if w.running == nil {
+				w.running = map[string]chan struct{}{}
+			}
+			ch := make(chan struct{})
+			w.running[id] = ch
+			w.mu.Unlock()
+			return func() {
+				w.mu.Lock()
+				delete(w.running, id)
+				w.mu.Unlock()
+				close(ch)
+			}
+		}
+		w.mu.Unlock()
+		<-prev
+	}
+}
+
 // run processes one job and records its terminal status. A cancelled ctx
-// leaves the job Downloading, so the next start re-queues it.
+// leaves the job Downloading, so the next start re-queues it. A job the API
+// paused or dropped stops with clean staging and no status write.
 func (w *Worker) run(ctx context.Context, j jobs.Job) {
 	log := w.Log.With("job", j.ID, "release", j.Release)
 	log.Info("job started")
 	stage := filepath.Join(w.Incomplete, j.ID)
-	storage, size, err := w.process(ctx, j, stage)
+	jctx, stop := context.WithCancelCause(ctx)
+	defer stop(nil)
+	go w.watch(jctx, j, stop)
+	storage, size, err := w.process(jctx, j, stage)
 	if ctx.Err() != nil {
 		os.RemoveAll(stage)
 		log.Info("job interrupted")
+		return
+	}
+	if errors.Is(context.Cause(jctx), errStopped) {
+		if err == nil {
+			os.RemoveAll(storage)
+		}
+		w.stopped(ctx, log, j, stage)
 		return
 	}
 	if err != nil {
 		os.RemoveAll(stage)
 		log.Warn("job failed", "err", err)
 		msg := err.Error()
-		w.retry(ctx, log, "mark failed", func() error { return w.Jobs.Fail(ctx, j.ID, msg) })
+		w.retry(ctx, log, "mark failed", func() (err error) { _, err = w.Jobs.Fail(ctx, j, msg); return })
 		return
 	}
-	w.retry(ctx, log, "mark completed", func() error { return w.Jobs.Complete(ctx, j.ID, storage, size) })
+	var ok bool
+	w.retry(ctx, log, "mark completed", func() (err error) { ok, err = w.Jobs.Complete(ctx, j, storage, size); return })
+	if !ok && ctx.Err() == nil {
+		os.RemoveAll(storage)
+		w.stopped(ctx, log, j, stage)
+		return
+	}
 	log.Info("job completed", "storage", storage, "bytes", size)
+}
+
+// stopped cleans up after a run the API paused or dropped. The next run
+// starts from zero.
+func (w *Worker) stopped(ctx context.Context, log *slog.Logger, j jobs.Job, stage string) {
+	os.RemoveAll(stage)
+	if err := w.Jobs.Progress(ctx, j, 0, 0); err != nil {
+		log.Warn("progress", "err", err)
+	}
+	log.Info("job stopped")
+}
+
+// watch cancels the run with errStopped once its job is no longer Downloading
+// under this run. Redis errors are ignored: the next tick checks again.
+func (w *Worker) watch(ctx context.Context, j jobs.Job, stop context.CancelCauseFunc) {
+	t := time.NewTicker(cmp.Or(w.Watch, time.Second))
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+		}
+		if ok, err := w.Jobs.Current(ctx, j); err == nil && !ok {
+			stop(errStopped)
+			return
+		}
+	}
 }
 
 // retry repeats a status write until it succeeds or ctx ends. A published file
@@ -133,7 +216,7 @@ func (w *Worker) process(ctx context.Context, j jobs.Job, stage string) (string,
 		return "", 0, err
 	}
 	size := source.Media{Bandwidth: best.Bandwidth, Duration: media.Duration()}.Size()
-	if err := w.Jobs.Start(ctx, j.ID, len(media.Segments), size); err != nil {
+	if err := w.Jobs.Start(ctx, j, len(media.Segments), size); err != nil {
 		return "", 0, err
 	}
 
@@ -147,7 +230,7 @@ func (w *Worker) process(ctx context.Context, j jobs.Job, stage string) (string,
 	var written int64
 	progress := func(done int, n int64) {
 		written += n
-		if err := w.Jobs.Progress(ctx, j.ID, done, written); err != nil {
+		if err := w.Jobs.Progress(ctx, j, done, written); err != nil {
 			w.Log.Warn("progress", "job", j.ID, "err", err)
 		}
 	}

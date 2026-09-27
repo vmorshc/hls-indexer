@@ -5,13 +5,17 @@ Code: `internal/sabnzbd` (accepts jobs), `internal/jobs` (state), `internal/down
 ## Job lifecycle
 
 ```
-addfile → Queued → Downloading → Completed
-                 ↘ Paused ↗     ↘ Failed → retry → new job
+addfile → Queued → Downloading → Completed | Failed → retry → new job
+Queued, Downloading → pause → Paused → resume → Queued
+addfile with priority -2 → Paused
 ```
 
 - `addfile` decodes the release ID, stores the job in Redis, enqueues it and returns `jobId`. The job keeps the upload's file name without `.nzb` as the release title (*arr names the upload after it). Without a file name it uses the release ID with `:` → `_`.
-- The worker claims jobs by priority, then age. `worker.jobs` sets how many run at once (default 1). *Not built yet:* `Paused`. A `-2` job queues last and still runs.
-- A worker restart re-queues `Downloading` jobs. They start again from zero with clean staging.
+- The worker claims jobs by priority, then age. `worker.jobs` sets how many run at once (default 1). `-100` is stored as `0`.
+- Priority `-2` adds the job `Paused`, out of the queue. Resume queues it with priority `0`, as in SABnzbd.
+- Pause takes a `Queued` job out of the queue. On a `Downloading` job, the worker checks the job every second and stops the run: staging removed, progress reset, no status write. Resume queues the job again. It starts from zero.
+- Each claim starts a new run (`run` counter on the job). Progress and terminal writes apply only while their run is current and the job is `Downloading`. A paused, resumed or deleted job ignores its old run. A run that publishes after a pause removes its published folder. The worker never runs two runs of one job at once.
+- A worker restart re-queues `Downloading` jobs. They start again from zero with clean staging. `Paused` jobs stay paused.
 - `Downloading` covers resolve, segment download, mux and validation.
 
 ## Pipeline

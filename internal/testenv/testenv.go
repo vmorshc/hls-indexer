@@ -125,12 +125,15 @@ func Start(t testing.TB, o Options) *Env {
 	e.Config = cfg
 
 	if o.Worker {
-		startWorker(t, cfg)
+		e.StartWorker(t)
 	}
 	return e
 }
 
-func startWorker(t testing.TB, cfg config.Config) {
+// StartWorker starts the worker role on the test Redis. Tests with
+// Options.Redis use it to start the worker late, e.g. to test a restart.
+func (e *Env) StartWorker(t testing.TB) {
+	cfg := e.Config
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- app.RunWorker(ctx, cfg, Logger(t)) }()

@@ -1,6 +1,7 @@
 package sabnzbd
 
 import (
+	"context"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -159,12 +160,20 @@ type queueSlot struct {
 }
 
 func (h *Handler) queue(w http.ResponseWriter, r *http.Request) {
-	if r.FormValue("name") != "" {
-		writeError(w, "not implemented")
-		return
-	}
 	if h.jobs == nil {
 		http.Error(w, "job store unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	switch r.FormValue("name") {
+	case "":
+	case "pause":
+		h.control(w, r, h.jobs.Pause)
+		return
+	case "resume":
+		h.control(w, r, h.jobs.Resume)
+		return
+	default:
+		writeError(w, "not implemented")
 		return
 	}
 	js, err := h.jobs.Queue(r.Context(), r.FormValue("category"))
@@ -191,6 +200,24 @@ func (h *Handler) queue(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, map[string]any{"queue": map[string]any{"paused": false, "noofslots": total, "slots": slots}})
+}
+
+// control pauses or resumes the jobs in value (comma list).
+func (h *Handler) control(w http.ResponseWriter, r *http.Request, do func(context.Context, string) error) {
+	ids := strings.Split(r.FormValue("value"), ",")
+	for _, id := range ids {
+		err := do(r.Context(), id)
+		if errors.Is(err, jobs.ErrNotFound) {
+			writeError(w, "Unknown job")
+			return
+		}
+		if err != nil {
+			h.log.Error("queue control", "err", err)
+			http.Error(w, "job store unavailable", http.StatusServiceUnavailable)
+			return
+		}
+	}
+	writeJSON(w, map[string]any{"status": true, "nzo_ids": ids})
 }
 
 func mib(b float64) string { return fmt.Sprintf("%.2f", b/(1<<20)) }

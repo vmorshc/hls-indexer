@@ -15,11 +15,12 @@ Job keys (`internal/jobs`):
 
 | Key | Type | Holds |
 |---|---|---|
-| `hls-indexer:job:<jobId>` | hash | job fields |
-| `hls-indexer:queue` | zset | pending job IDs, score = −priority × 10¹³ + created ms |
-| `hls-indexer:active` | zset | queued and running job IDs, score = created ms |
+| `hls-indexer:job:<jobId>` | hash | job fields, `run` = claim counter |
+| `hls-indexer:queue` | zset | pending job IDs, score = −priority × 10¹³ + created ms. Paused jobs are not in it. |
+| `hls-indexer:active` | zset | queued, paused and running job IDs, score = created ms |
 | `hls-indexer:dedup:<category>:<releaseId>` | string | active job ID |
 | `hls-indexer:history` | zset | finished job IDs, score = finished ms |
 
 - Releases and search results are never stored. The release ID carries everything the worker needs.
 - Only the worker writes progress and terminal status. The API writes job creation, pause/resume and deletes.
+- Status changes that race run as Lua scripts: create with dedup, claim (only a `Queued` job), pause, resume, requeue, and finish (only the current run of a `Downloading` job).

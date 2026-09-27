@@ -23,12 +23,17 @@ const nzbFor = `<?xml version="1.0" encoding="UTF-8"?>
 // addfile posts an NZB like Sonarr does: multipart field "name", file name = release title + .nzb.
 func addfile(t *testing.T, e *testenv.Env, nzb []byte, filename, cat string) map[string]any {
 	t.Helper()
+	return addfileP(t, e, nzb, filename, cat, -100)
+}
+
+func addfileP(t *testing.T, e *testenv.Env, nzb []byte, filename, cat string, priority int) map[string]any {
+	t.Helper()
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	fw, _ := mw.CreateFormFile("name", filename)
 	fw.Write(nzb)
 	mw.Close()
-	u := e.API.URL + "/downloader/api?mode=addfile&output=json&priority=-100&cat=" + cat + "&apikey=" + testenv.DownloaderKey
+	u := e.API.URL + "/downloader/api?mode=addfile&output=json&priority=" + strconv.Itoa(priority) + "&cat=" + cat + "&apikey=" + testenv.DownloaderKey
 	resp, err := http.Post(u, mw.FormDataContentType(), &buf)
 	if err != nil {
 		t.Fatal(err)
