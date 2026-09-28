@@ -61,7 +61,7 @@ The flow samples one episode per voice and reuses its quality and size for the v
 7. Filter by kind (the Newznab function and `cat`), season and year. Movies allow ±1 year. Series compare the page year with the TMDb air year of the requested season, ±1. A `q` year never filters series.
 8. ID requests load only titles whose local or original title equals a TMDb title (letters and digits, case-insensitive). When some search hits match the Ukrainian TMDb title, the other hits are not loaded.
 9. Follow sibling season links when the requested season is on another page.
-10. Load each title's voices and episodes. Filter by `ep`.
+10. Load each title's voices and episodes. For a TMDb-matched series, pass that page's season count and final-episode aired confirmation to the source, including sibling pages. Air dates through today (UTC) count as aired. Without metadata, do not create a finished-series cache entry. Filter by `ep`.
 11. Build releases, sort by `pubDate` desc, then by release ID. Apply `offset` and `limit`. `pubDate` is the title page update date, the same for all its episodes.
 
 Put `tvdbid`, `tmdbid` and `imdb` attrs only on releases matched through a TMDb lookup. Sonarr searches by ID first and falls back to title only when the ID search returns nothing. Radarr's title fallback uses generic `t=search`.

@@ -72,6 +72,13 @@ type Media struct {
 // Size estimates the media size in bytes: bandwidth × duration / 8.
 func (m Media) Size() int64 { return int64(float64(m.Bandwidth) * m.Duration / 8) }
 
+// TitleOptions supplies season metadata without coupling sources to a metadata provider.
+// Zero values mean the caller cannot confirm that the season has finished.
+type TitleOptions struct {
+	ExpectedEpisodes int
+	LastEpisodeAired bool
+}
+
 // Source turns a query into titles and an episode into stream data.
 type Source interface {
 	// Name is the release ID prefix, e.g. "uakino".
@@ -79,7 +86,7 @@ type Source interface {
 	// Search returns the first page of hits for a query.
 	Search(ctx context.Context, query string) ([]Candidate, error)
 	// Title loads a title page and its voices.
-	Title(ctx context.Context, titleID string) (Title, error)
+	Title(ctx context.Context, titleID string, options TitleOptions) (Title, error)
 	// Sample reads the best variant of an episode: resolution, bandwidth, duration.
 	Sample(ctx context.Context, ep Episode) (Media, error)
 	// Resolve returns the master playlist URL and subtitle tracks of an episode.

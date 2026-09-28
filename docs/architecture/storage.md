@@ -11,6 +11,8 @@ Redis is the only store. Every key uses the prefix `hls-indexer:`. Compose runs 
 | Source cache | `internal/source/<name>` | source policy, see [UAKino cache](../uakino/rules.md#cache) |
 | TMDb: ID → titles, year, season episode lists | `internal/metadata/tmdb` | 1 month |
 
+UAKino owns `hls-indexer:uakino:title:<news_id>`, a JSON string containing the parsed finished title and playlist. Its TTL is `uakino.cache_ttl` (default `720h`). Both roles share this cache. Ongoing titles and search results have no keys.
+
 Job keys (`internal/jobs`):
 
 | Key | Type | Holds |

@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/vmorshc/hls-indexer/internal/source"
 )
 
@@ -25,7 +26,9 @@ const (
 
 // Options configure the client.
 type Options struct {
-	BaseURL string
+	Redis    *redis.Client
+	CacheTTL time.Duration
+	BaseURL  string
 	// RPS limits requests to the site. Player pages and the CDN are not limited.
 	RPS float64
 	// ProxyURL is an optional HTTP proxy for every request. Empty means none.
@@ -36,6 +39,8 @@ type Options struct {
 
 // Client talks to the UAKino site and its player hosts. It keeps cookies in memory only.
 type Client struct {
+	rdb         *redis.Client
+	cacheTTL    time.Duration
 	base        *url.URL
 	site        *http.Client // rate limited
 	player      *http.Client // not limited
@@ -68,6 +73,8 @@ func newClient(o Options, tlsConfig *tls.Config) (*Client, error) {
 	}
 	lim := &limiter{interval: time.Duration(float64(time.Second) / o.RPS)}
 	return &Client{
+		rdb:         o.Redis,
+		cacheTTL:    o.CacheTTL,
 		base:        base,
 		site:        &http.Client{Transport: headers{limited{tr, lim}}, Timeout: requestTimeout, CheckRedirect: keepPost},
 		player:      &http.Client{Transport: headers{tr}, Timeout: requestTimeout},

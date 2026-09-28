@@ -253,7 +253,7 @@ func (w *Worker) source(name string) source.Source {
 
 // episode finds the release's voice and episode on the title page.
 func episode(ctx context.Context, src source.Source, rid release.ID) (source.Episode, error) {
-	t, err := src.Title(ctx, rid.TitleID)
+	t, err := src.Title(ctx, rid.TitleID, source.TitleOptions{})
 	if err != nil {
 		return source.Episode{}, fmt.Errorf("title: %w", err)
 	}

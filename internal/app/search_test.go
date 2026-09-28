@@ -483,15 +483,11 @@ func TestTMDbCachedInRedis(t *testing.T) {
 	eq(t, "cached result", titles(second), titles(first))
 
 	ctx := context.Background()
-	keys, err := e.Redis.Keys(ctx, "*").Result()
+	keys, err := e.Redis.Keys(ctx, "hls-indexer:tmdb:*").Result()
 	if err != nil || len(keys) == 0 {
 		t.Fatalf("keys %v %v", keys, err)
 	}
 	for _, k := range keys {
-		// Search stores only TMDb data: no jobs, no releases.
-		if !strings.HasPrefix(k, "hls-indexer:tmdb:") {
-			t.Errorf("unexpected key %s", k)
-		}
 		ttl := e.Redis.TTL(ctx, k).Val()
 		if ttl < 29*24*time.Hour || ttl > 31*24*time.Hour {
 			t.Errorf("%s ttl %v, want 1 month", k, ttl)

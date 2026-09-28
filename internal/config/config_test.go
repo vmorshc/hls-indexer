@@ -28,6 +28,23 @@ func writeFile(t *testing.T, body string) string {
 	return p
 }
 
+func TestUAKinoCacheTTL(t *testing.T) {
+	p := writeFile(t, "uakino:\n  cache_ttl: 2h\n")
+	c, err := Load(p, env(nil))
+	if err != nil || c.UAKino.CacheTTL != 2*time.Hour {
+		t.Fatalf("YAML TTL: %v, %v", c.UAKino.CacheTTL, err)
+	}
+	c, err = Load(p, env(map[string]string{"UAKINO_CACHE_TTL": "3h"}))
+	if err != nil || c.UAKino.CacheTTL != 3*time.Hour {
+		t.Fatalf("env TTL: %v, %v", c.UAKino.CacheTTL, err)
+	}
+	for _, value := range []string{"0s", "-1h", "invalid"} {
+		if _, err := Load("", env(map[string]string{"UAKINO_CACHE_TTL": value})); err == nil {
+			t.Errorf("accepted TTL %q", value)
+		}
+	}
+}
+
 func TestLoadDefaults(t *testing.T) {
 	c, err := Load("", env(nil))
 	if err != nil {
@@ -37,7 +54,7 @@ func TestLoadDefaults(t *testing.T) {
 		HTTP:   HTTP{Addr: ":8080", PublicURL: "http://localhost:8080"},
 		Paths:  Paths{Incomplete: "/data/incomplete", Downloads: "/data/downloads"},
 		Worker: Worker{Jobs: 1, SegmentConcurrency: 8, SegmentAttempts: 5, SegmentBackoff: time.Second, X264Preset: "veryfast", X264CRF: 20, AACBitrate: "192k"},
-		UAKino: UAKino{BaseURL: "https://uakino.best", RPS: 1, PlayerHosts: []string{"ashdi.vip"}},
+		UAKino: UAKino{BaseURL: "https://uakino.best", RPS: 1, PlayerHosts: []string{"ashdi.vip"}, CacheTTL: 720 * time.Hour},
 		TMDb:   TMDb{BaseURL: "https://api.themoviedb.org/3"},
 	}
 	if !reflect.DeepEqual(c, want) {
@@ -91,6 +108,7 @@ func TestLoadLayers(t *testing.T) {
 				"AAC_BITRATE":         "128k",
 				"UAKINO_BASE_URL":     "http://ua",
 				"UAKINO_RPS":          "0.5",
+				"UAKINO_CACHE_TTL":    "1h",
 				"UAKINO_PLAYER_HOSTS": "a.test, b.test",
 				"TMDB_BASE_URL":       "http://tmdb",
 			},
@@ -99,7 +117,7 @@ func TestLoadLayers(t *testing.T) {
 					HTTP:   HTTP{Addr: ":1", PublicURL: "http://pub"},
 					Paths:  Paths{Incomplete: "/i", Downloads: "/d"},
 					Worker: Worker{Jobs: 2, SegmentConcurrency: 4, SegmentAttempts: 3, SegmentBackoff: 250 * time.Millisecond, X264Preset: "slow", X264CRF: 23, AACBitrate: "128k"},
-					UAKino: UAKino{BaseURL: "http://ua", RPS: 0.5, PlayerHosts: []string{"a.test", "b.test"}},
+					UAKino: UAKino{BaseURL: "http://ua", RPS: 0.5, PlayerHosts: []string{"a.test", "b.test"}, CacheTTL: time.Hour},
 					TMDb:   TMDb{BaseURL: "http://tmdb"},
 				}
 				if !reflect.DeepEqual(c, want) {

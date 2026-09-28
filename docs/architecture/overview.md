@@ -90,7 +90,7 @@ A source turns a query into titles and a release coordinate into a playable stre
 | Operation | Returns |
 |---|---|
 | Search titles | Candidates: title ID, names, year, season, kind |
-| Load a title | Voices with episodes. Takes the expected episode count for cache decisions. |
+| Load a title | Voices with episodes. Takes expected episode count and final-episode aired confirmation for cache decisions. |
 | Sample an episode | Best variant resolution, bandwidth and duration, for release quality and size |
 | Resolve an episode or movie voice | HLS master URL and subtitle tracks: VTT URL, label, ISO 639-2 language |
 

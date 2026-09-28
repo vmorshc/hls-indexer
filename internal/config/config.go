@@ -49,9 +49,10 @@ type Worker struct {
 }
 
 type UAKino struct {
-	BaseURL     string   `yaml:"base_url"`
-	RPS         float64  `yaml:"rps"`
-	PlayerHosts []string `yaml:"player_hosts"`
+	CacheTTL    time.Duration `yaml:"cache_ttl"`
+	BaseURL     string        `yaml:"base_url"`
+	RPS         float64       `yaml:"rps"`
+	PlayerHosts []string      `yaml:"player_hosts"`
 }
 
 type TMDb struct {
@@ -97,6 +98,7 @@ func (c Config) LogValue() slog.Value {
 		slog.String("worker.x264_preset", c.Worker.X264Preset),
 		slog.Int("worker.x264_crf", c.Worker.X264CRF),
 		slog.String("worker.aac_bitrate", c.Worker.AACBitrate),
+		slog.Duration("uakino.cache_ttl", c.UAKino.CacheTTL),
 		slog.String("uakino.base_url", c.UAKino.BaseURL),
 		slog.Float64("uakino.rps", c.UAKino.RPS),
 		slog.String("uakino.player_hosts", strings.Join(c.UAKino.PlayerHosts, ",")),
@@ -170,6 +172,13 @@ func applyEnv(c *Config, lookupEnv func(string) (string, bool)) error {
 	if v, ok := lookupEnv("UAKINO_PLAYER_HOSTS"); ok {
 		c.UAKino.PlayerHosts = strings.FieldsFunc(v, func(r rune) bool { return r == ',' || r == ' ' })
 	}
+	if v, ok := lookupEnv("UAKINO_CACHE_TTL"); ok {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return fmt.Errorf("env UAKINO_CACHE_TTL: %w", err)
+		}
+		c.UAKino.CacheTTL = d
+	}
 	if v, ok := lookupEnv("SEGMENT_BACKOFF"); ok {
 		d, err := time.ParseDuration(v)
 		if err != nil {
@@ -218,6 +227,9 @@ func (c Config) validate() error {
 	}
 	if c.Worker.X264CRF < 0 || c.Worker.X264CRF > 51 {
 		errs = append(errs, errors.New("worker.x264_crf must be 0 to 51"))
+	}
+	if c.UAKino.CacheTTL <= 0 {
+		errs = append(errs, errors.New("uakino.cache_ttl must be positive"))
 	}
 	if c.UAKino.RPS <= 0 {
 		errs = append(errs, errors.New("uakino.rps must be positive"))

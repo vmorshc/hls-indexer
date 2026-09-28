@@ -41,10 +41,15 @@ var ErrBadTitleID = errors.New("bad uakino title id")
 
 // Title loads the title page and its playlist. Movies without a playlist use
 // the inline player when it points to a player host.
-func (c *Client) Title(ctx context.Context, titleID string) (source.Title, error) {
+func (c *Client) Title(ctx context.Context, titleID string, options source.TitleOptions) (source.Title, error) {
 	m := titleIDRe.FindStringSubmatch(titleID)
 	if m == nil {
 		return source.Title{}, ErrBadTitleID
+	}
+	var cached source.Title
+	if c.cacheGet(ctx, "title:"+m[1], &cached) {
+		cached.ID = titleID
+		return cached, nil
 	}
 	body, final, err := c.getSite(ctx, "/"+titleID+".html", nil)
 	if err != nil {
@@ -84,6 +89,9 @@ func (c *Client) Title(ctx context.Context, titleID string) (source.Title, error
 		}
 	} else if len(t.Voices) > 0 {
 		t.Kind, t.Season = source.Movie, 0
+	}
+	if finished(t, options) {
+		c.cacheSet(ctx, "title:"+m[1], t)
 	}
 	return t, nil
 }

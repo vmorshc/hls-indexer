@@ -87,6 +87,7 @@ func (c *Catalog) HasSource(name string) bool {
 
 // plan is the resolved request: what to search for and how to filter.
 type plan struct {
+	show    *tmdb.Show
 	names   []string
 	kinds   map[source.Kind]bool
 	year    int // movie year or season air year; 0 means no filter
@@ -239,6 +240,7 @@ func (c *Catalog) plan(ctx context.Context, q Query) (plan, bool, error) {
 		if ok && (nameKey(show.Title) == nameKey(m[1]) || nameKey(show.TitleUK) == nameKey(m[1])) {
 			if s, e, ok := show.Absolute(atoi(m[2])); ok {
 				return plan{
+					show:    &show,
 					names:   []string{m[1], show.Title, show.TitleUK},
 					kinds:   map[source.Kind]bool{source.Series: true},
 					season:  s,
@@ -254,6 +256,7 @@ func (c *Catalog) plan(ctx context.Context, q Query) (plan, bool, error) {
 // episode fills season and episode for a known series: an absolute number, a
 // date or the plain season/ep params.
 func (c *Catalog) episode(ctx context.Context, p plan, show tmdb.Show, q Query, absolute int) (plan, bool, error) {
+	p.show = &show
 	switch {
 	case isDate(q):
 		date := fmt.Sprintf("%04d-%s", q.Season, strings.ReplaceAll(q.Ep, "/", "-"))
@@ -273,6 +276,28 @@ func (c *Catalog) episode(ctx context.Context, p plan, show tmdb.Show, q Query, 
 	}
 	p.year = seasonYear(show, p.season)
 	return p, true, nil
+}
+
+func (c *Catalog) titleOptions(ctx context.Context, show tmdb.Show, season int) (source.TitleOptions, error) {
+	se, ok := show.Season(season)
+	if !ok || se.EpisodeCount <= 0 {
+		return source.TitleOptions{}, nil
+	}
+	options := source.TitleOptions{ExpectedEpisodes: se.EpisodeCount}
+	eps, err := c.tmdb.SeasonEpisodes(ctx, show.ID, season)
+	if err != nil {
+		return options, err
+	}
+	today := time.Now().UTC().Format("2006-01-02")
+	for _, ep := range eps {
+		if ep.Number != se.EpisodeCount {
+			continue
+		}
+		if _, err := time.Parse("2006-01-02", ep.AirDate); err == nil {
+			options.LastEpisodeAired = ep.AirDate <= today
+		}
+	}
+	return options, nil
 }
 
 func seasonYear(show tmdb.Show, season int) int {
@@ -326,12 +351,22 @@ func (c *Catalog) titles(ctx context.Context, src source.Source, p plan) ([]sour
 
 	loaded := map[string]bool{}
 	var out []source.Title
-	load := func(id string) (source.Title, bool, error) {
+	seasonOptions := map[int]source.TitleOptions{}
+	load := func(id string, season int) (source.Title, bool, error) {
 		if loaded[id] {
 			return source.Title{}, false, nil
 		}
 		loaded[id] = true
-		t, err := src.Title(ctx, id)
+		options, known := seasonOptions[season]
+		if !known && p.show != nil {
+			var err error
+			options, err = c.titleOptions(ctx, *p.show, season)
+			if err != nil {
+				return source.Title{}, false, err
+			}
+			seasonOptions[season] = options
+		}
+		t, err := src.Title(ctx, id, options)
 		if err != nil {
 			return t, false, err
 		}
@@ -341,7 +376,7 @@ func (c *Catalog) titles(ctx context.Context, src source.Source, p plan) ([]sour
 		return p.kinds[t.Kind] && (p.season == 0 || t.Season == p.season) && yearOK(p.year, t.Year) && (!p.strict || nameMatch(p.names, t))
 	}
 	for _, cd := range picked {
-		t, ok, err := load(cd.ID)
+		t, ok, err := load(cd.ID, cd.Season)
 		if err != nil {
 			return nil, err
 		}
@@ -354,7 +389,7 @@ func (c *Catalog) titles(ctx context.Context, src source.Source, p plan) ([]sour
 	}
 	// The requested season is on a sibling page that search did not return.
 	for _, cd := range otherSeason {
-		t, ok, err := load(cd.ID)
+		t, ok, err := load(cd.ID, cd.Season)
 		if err != nil {
 			return nil, err
 		}
@@ -365,7 +400,7 @@ func (c *Catalog) titles(ctx context.Context, src source.Source, p plan) ([]sour
 			if sl.Season != p.season {
 				continue
 			}
-			sib, ok, err := load(sl.TitleID)
+			sib, ok, err := load(sl.TitleID, sl.Season)
 			if err != nil {
 				return nil, err
 			}

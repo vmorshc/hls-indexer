@@ -26,7 +26,7 @@ import (
 const WorkerClientName = "hls-indexer-worker"
 
 // NewAPI builds the handler for /indexer/api and /downloader/api. rdb caches
-// TMDb responses and holds jobs. A nil rdb disables the cache and the job modes.
+// TMDb and UAKino data and holds jobs. A nil rdb disables caches and job modes.
 func NewAPI(cfg config.Config, rdb *redis.Client, log *slog.Logger) (http.Handler, error) {
 	var errs []error
 	if cfg.Secrets.IndexerAPIKey == "" {
@@ -35,7 +35,7 @@ func NewAPI(cfg config.Config, rdb *redis.Client, log *slog.Logger) (http.Handle
 	if cfg.Secrets.DownloaderAPIKey == "" {
 		errs = append(errs, errors.New("DOWNLOADER_API_KEY is required"))
 	}
-	ua, err := newUAKino(cfg)
+	ua, err := newUAKino(cfg, rdb)
 	if err != nil {
 		errs = append(errs, err)
 	}
@@ -53,8 +53,10 @@ func NewAPI(cfg config.Config, rdb *redis.Client, log *slog.Logger) (http.Handle
 	return mux, nil
 }
 
-func newUAKino(cfg config.Config) (source.Source, error) {
+func newUAKino(cfg config.Config, rdb *redis.Client) (source.Source, error) {
 	return uakino.New(uakino.Options{
+		Redis:       rdb,
+		CacheTTL:    cfg.UAKino.CacheTTL,
 		BaseURL:     cfg.UAKino.BaseURL,
 		RPS:         cfg.UAKino.RPS,
 		ProxyURL:    cfg.Secrets.UAKinoProxyURL.Reveal(),
@@ -102,7 +104,7 @@ func RunWorker(ctx context.Context, cfg config.Config, log *slog.Logger) error {
 		return err
 	}
 	defer rdb.Close()
-	ua, err := newUAKino(cfg)
+	ua, err := newUAKino(cfg, rdb)
 	if err != nil {
 		return err
 	}
