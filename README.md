@@ -81,7 +81,7 @@ Settings:
 | `worker.x264_crf` | `X264_CRF` | `20` |
 | `worker.aac_bitrate` | `AAC_BITRATE` | `192k` (re-encode of non-AAC audio) |
 | `uakino.base_url` | `UAKINO_BASE_URL` | `https://uakino.best` |
-| `uakino.rps` | `UAKINO_RPS` | `1` |
+| `uakino.rps` | `UAKINO_RPS` | `1` (requests per second to the site, player pages and CDN are not limited) |
 | `uakino.cache_ttl` | `UAKINO_CACHE_TTL` | `720h` (30 days, must be positive) |
 | `uakino.player_hosts` | `UAKINO_PLAYER_HOSTS` (comma list) | `[ashdi.vip]` (inline movie players, subdomains included) |
 | `tmdb.base_url` | `TMDB_BASE_URL` | `https://api.themoviedb.org/3` |
