@@ -134,7 +134,7 @@ func TestClientSourceUnavailable(t *testing.T) {
 			if _, err := c.Search(context.Background(), "x"); !errors.Is(err, source.ErrUnavailable) {
 				t.Errorf("Search err = %v", err)
 			}
-			if _, err := c.Title(context.Background(), "312-shrek-2"); !errors.Is(err, source.ErrUnavailable) {
+			if _, err := c.Title(context.Background(), "312-shrek-2", source.TitleOptions{}); !errors.Is(err, source.ErrUnavailable) {
 				t.Errorf("Title err = %v", err)
 			}
 		})

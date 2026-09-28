@@ -22,7 +22,7 @@ Completed | Failed → history delete → archived (archive=1) | gone (archive=0
 
 ## Pipeline
 
-1. **Resolve.** Decode the release ID, load the title page and find the voice (by hash) and episode. Call `Source.Resolve`. It returns the master m3u8 and subtitle tracks: VTT URL, label and language. Pick the best variant and read the media playlist. A playlist without `EXT-X-ENDLIST` fails. Download each VTT (same retries as segments) and convert it to SRT in Go. A subtitle that fails to download or parse fails the job.
+1. **Resolve.** Decode the release ID, load the title page and find the voice (by hash) and episode. Call `Source.Resolve`, bypassing the stream cache for a SAB retry job. It returns cache provenance, the master m3u8 and subtitle tracks: VTT URL, label and language. Pick the best variant and read the media playlist. A playlist without `EXT-X-ENDLIST` fails. Download each VTT (same retries as segments) and convert it to SRT in Go. A subtitle that fails to download or parse fails the job.
 2. **Probe.** Download the first segment and pipe it to `ffprobe`. H.264 video and AAC audio get stream copy. Other video is re-encoded with `libx264 -pix_fmt yuv420p` (8-bit plays everywhere), preset `worker.x264_preset` (default `veryfast`), CRF `worker.x264_crf` (default 20). Other audio is re-encoded with `aac` at `worker.aac_bitrate` (default `192k`). A segment without a video or audio stream fails the job. The probed segment is the first one fed to `ffmpeg`, not downloaded again.
 3. **Download.** Fetch segments in parallel (`worker.segment_concurrency`, default 8). At most that many segments sit in memory. A segment is complete when the status is 200 and the body matches `Content-Length`. A short body or a non-200 status is retried: `worker.segment_attempts` tries (default 5), first wait `worker.segment_backoff` (default 1 s), doubled each time. When the tries run out, the job fails. Never skip a segment.
 4. **Mux.** Start `ffmpeg` as a subprocess. Write segments to `pipe:0` in playlist order. Write each SRT to its own pipe (`pipe:3`, `pipe:4`, …, ffmpeg's extra file descriptors). Map the first video and first audio track and one subtitle track per pipe. Video and audio use the codec args from the probe, subtitles stream copy. Audio language `ukr`. A subtitle track gets the source's language (`ukr`, `eng`, none if unknown) and the source label as title. Output: `/data/incomplete/<jobId>/<release title>.mkv`. No segment or subtitle files touch the disk.
@@ -52,9 +52,9 @@ Progress for `queue`: completed segments and bytes against the playlist total an
 
 | Case | Action |
 |---|---|
-| Playlist fetch fails with a cached HLS URL | The source deletes the cached URL. The worker resolves again once. |
+| Playlist fetch fails with a cached HLS URL | For a master or media fetch failure, the source conditionally deletes the failed cached stream. The worker forces one fresh resolve and retries playlist loading once, using the new subtitles too. Parse failures, non-VOD playlists and cancellation do not trigger recovery. |
 | Source outage, segment retries exhausted, codec error, validation fails | `Failed` with `fail_message`, staging removed |
-| SAB `retry` of a `Failed` job | New job with the same release, title, category and priority. It resolves again. The failed job leaves history, as in SABnzbd. When the same release is already active in the category, retry returns that job's ID (`addfile` dedup). |
+| SAB `retry` of a `Failed` job | New job with the same release, title, category and priority. It bypasses the stream cache and overwrites it after successful resolution. The job stores this requirement before enqueueing, so a worker restart preserves it. The failed job leaves history, as in SABnzbd. When the same release is already active in the category, retry returns that job's ID without changing its resolve mode (`addfile` dedup). |
 | Queue delete of a `Downloading` job | The worker sees the job gone and stops as on pause. Staging is removed even with `del_files=0`. |
 | Delete with `del_files=1` | The API removes only `<jobId>` folders in `incomplete` and `downloads` |
 

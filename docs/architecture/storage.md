@@ -11,11 +11,15 @@ Redis is the only store. Every key uses the prefix `hls-indexer:`. Compose runs 
 | Source cache | `internal/source/<name>` | source policy, see [UAKino cache](../uakino/rules.md#cache) |
 | TMDb: ID → titles, year, season episode lists | `internal/metadata/tmdb` | 1 month |
 
+UAKino owns `hls-indexer:uakino:title:<news_id>`, a JSON string containing the parsed finished title and playlist. Its TTL is `uakino.cache_ttl` (default `720h`). Both roles share this cache. Ongoing titles and search results have no keys.
+
+UAKino also owns JSON string keys `hls-indexer:uakino:media:<locator-sha256>` (sampled resolution, bandwidth, duration) and `hls-indexer:uakino:stream:<locator-sha256>` (master URL, subtitles). Both use `uakino.cache_ttl` without renewal on reads. Search alone writes media entries. A stream invalidation compares the stored value before deleting it to preserve concurrent replacements.
+
 Job keys (`internal/jobs`):
 
 | Key | Type | Holds |
 |---|---|---|
-| `hls-indexer:job:<jobId>` | hash | job fields, `run` = claim counter, `archived=1` after history delete with `archive=1` |
+| `hls-indexer:job:<jobId>` | hash | job fields, `run` = claim counter, `archived=1` after history delete with `archive=1`, `fresh_resolve=true` on SAB retry jobs to bypass the source stream cache |
 | `hls-indexer:queue` | zset | pending job IDs, score = −priority × 10¹³ + created ms. Paused jobs are not in it. |
 | `hls-indexer:active` | zset | queued, paused and running job IDs, score = created ms |
 | `hls-indexer:dedup:<category>:<releaseId>` | string | active job ID |

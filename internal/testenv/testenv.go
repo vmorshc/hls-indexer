@@ -40,7 +40,7 @@ type Options struct {
 	TMDb   http.Handler
 	// Worker starts the worker role in-process. It needs the test Redis.
 	Worker bool
-	// Redis gives the API the test Redis (TMDb cache). Without it the API runs
+	// Redis gives the API the test Redis (TMDb and source caches). Without it the API runs
 	// with no cache. Worker implies Redis.
 	Redis bool
 	// Configure edits the config before the roles start.

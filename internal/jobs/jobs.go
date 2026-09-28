@@ -54,12 +54,13 @@ const (
 
 // Job is one download.
 type Job struct {
-	ID       string
-	Release  string // release ID
-	Title    string // release title, the output file name without extension
-	Category string
-	Priority int
-	Status   string
+	ID           string
+	Release      string // release ID
+	Title        string // release title, the output file name without extension
+	Category     string
+	Priority     int
+	Status       string
+	FreshResolve bool // SAB retry bypasses the source stream cache
 	// Run counts claims. Worker writes carry it and apply only while it is
 	// current, so a paused, resumed or deleted job ignores a stale run.
 	Run      int64
@@ -104,6 +105,10 @@ return ARGV[1]
 // same release is already active in the same category it returns the existing
 // job ID.
 func (s *Store) Add(ctx context.Context, rel, title, category string, priority int) (string, error) {
+	return s.add(ctx, rel, title, category, priority, false)
+}
+
+func (s *Store) add(ctx context.Context, rel, title, category string, priority int, fresh bool) (string, error) {
 	id, err := newID()
 	if err != nil {
 		return "", err
@@ -116,7 +121,7 @@ func (s *Store) Add(ctx context.Context, rel, title, category string, priority i
 	args := []any{id, score, now.UnixMilli()}
 	args = append(args, fields(Job{
 		ID: id, Release: rel, Title: title, Category: category,
-		Priority: priority, Status: status, Created: now,
+		Priority: priority, Status: status, Created: now, FreshResolve: fresh,
 	})...)
 	return createScript.Run(ctx, s.rdb,
 		[]string{dedupKey(category, rel), jobKey(id), queueKey, activeKey}, args...).Text()
@@ -340,7 +345,7 @@ func (s *Store) Retry(ctx context.Context, id string) (string, error) {
 	if j.Status != Failed {
 		return "", ErrNotFound
 	}
-	newID, err := s.Add(ctx, j.Release, j.Title, j.Category, j.Priority)
+	newID, err := s.add(ctx, j.Release, j.Title, j.Category, j.Priority, true)
 	if err != nil {
 		return "", err
 	}
@@ -498,6 +503,7 @@ func fields(j Job) []any {
 	return []any{
 		"id", j.ID, "release", j.Release, "title", j.Title, "category", j.Category,
 		"priority", j.Priority, "status", j.Status, "created", j.Created.UnixMilli(),
+		"fresh_resolve", strconv.FormatBool(j.FreshResolve),
 	}
 }
 
@@ -516,6 +522,6 @@ func parse(m map[string]string) Job {
 		SegmentsTotal: int(i("segments_total")), SegmentsDone: int(i("segments_done")),
 		BytesDone: i("bytes_done"), SizeEstimate: i("size_estimate"),
 		Bytes: i("bytes"), Storage: m["storage"], FailMessage: m["fail_message"],
-		Archived: m["archived"] == "1",
+		Archived: m["archived"] == "1", FreshResolve: m["fresh_resolve"] == "true",
 	}
 }

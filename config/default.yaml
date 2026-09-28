@@ -19,6 +19,7 @@ worker:
   x264_crf: 20
   aac_bitrate: "192k"
 uakino:
+  cache_ttl: "720h"
   # Site root. Change it when UAKino moves to a new domain.
   base_url: "https://uakino.best"
   # Requests per second to the site. Player pages and the CDN are not limited.

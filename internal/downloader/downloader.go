@@ -205,11 +205,21 @@ func (w *Worker) process(ctx context.Context, j jobs.Job, stage string) (string,
 	if err != nil {
 		return "", 0, err
 	}
-	stream, err := src.Resolve(ctx, ep)
+	stream, err := src.Resolve(ctx, ep, j.FreshResolve)
 	if err != nil {
 		return "", 0, fmt.Errorf("resolve: %w", err)
 	}
 	best, media, err := w.Pipeline.Playlist(ctx, stream.Master)
+	if err != nil && stream.Cached && errors.Is(err, errPlaylistFetch) && ctx.Err() == nil {
+		if invalidateErr := src.InvalidateStream(ctx, ep, stream); invalidateErr != nil {
+			return "", 0, fmt.Errorf("invalidate stream: %w", invalidateErr)
+		}
+		stream, err = src.Resolve(ctx, ep, true)
+		if err != nil {
+			return "", 0, fmt.Errorf("resolve: %w", err)
+		}
+		best, media, err = w.Pipeline.Playlist(ctx, stream.Master)
+	}
 	if err != nil {
 		return "", 0, err
 	}
@@ -253,7 +263,7 @@ func (w *Worker) source(name string) source.Source {
 
 // episode finds the release's voice and episode on the title page.
 func episode(ctx context.Context, src source.Source, rid release.ID) (source.Episode, error) {
-	t, err := src.Title(ctx, rid.TitleID)
+	t, err := src.Title(ctx, rid.TitleID, source.TitleOptions{})
 	if err != nil {
 		return source.Episode{}, fmt.Errorf("title: %w", err)
 	}
@@ -337,11 +347,13 @@ type Pipeline struct {
 	Encode   Encode
 }
 
+var errPlaylistFetch = errors.New("playlist fetch failed")
+
 // Playlist reads the master playlist, picks the best variant and reads its media playlist.
 func (p Pipeline) Playlist(ctx context.Context, master string) (hls.Variant, hls.Media, error) {
 	body, base, err := p.get(ctx, master)
 	if err != nil {
-		return hls.Variant{}, hls.Media{}, fmt.Errorf("master playlist: %w", err)
+		return hls.Variant{}, hls.Media{}, fmt.Errorf("master playlist: %w: %w", errPlaylistFetch, err)
 	}
 	vs, err := hls.ParseMaster(string(body), base)
 	if err != nil {
@@ -350,7 +362,7 @@ func (p Pipeline) Playlist(ctx context.Context, master string) (hls.Variant, hls
 	best := hls.Best(vs)
 	body, base, err = p.get(ctx, best.URL)
 	if err != nil {
-		return hls.Variant{}, hls.Media{}, fmt.Errorf("media playlist: %w", err)
+		return hls.Variant{}, hls.Media{}, fmt.Errorf("media playlist: %w: %w", errPlaylistFetch, err)
 	}
 	m, err := hls.ParseMedia(string(body), base)
 	if err != nil {

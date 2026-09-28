@@ -72,6 +72,13 @@ type Media struct {
 // Size estimates the media size in bytes: bandwidth × duration / 8.
 func (m Media) Size() int64 { return int64(float64(m.Bandwidth) * m.Duration / 8) }
 
+// TitleOptions supplies season metadata without coupling sources to a metadata provider.
+// Zero values mean the caller cannot confirm that the season has finished.
+type TitleOptions struct {
+	ExpectedEpisodes int
+	LastEpisodeAired bool
+}
+
 // Source turns a query into titles and an episode into stream data.
 type Source interface {
 	// Name is the release ID prefix, e.g. "uakino".
@@ -79,15 +86,21 @@ type Source interface {
 	// Search returns the first page of hits for a query.
 	Search(ctx context.Context, query string) ([]Candidate, error)
 	// Title loads a title page and its voices.
-	Title(ctx context.Context, titleID string) (Title, error)
+	Title(ctx context.Context, titleID string, options TitleOptions) (Title, error)
+	// CachedMedia returns previously measured episode data without fetching a stream.
+	CachedMedia(ctx context.Context, ep Episode) (Media, bool)
 	// Sample reads the best variant of an episode: resolution, bandwidth, duration.
 	Sample(ctx context.Context, ep Episode) (Media, error)
 	// Resolve returns the master playlist URL and subtitle tracks of an episode.
-	Resolve(ctx context.Context, ep Episode) (Stream, error)
+	// With fresh=true it bypasses cached streams and replaces the entry on success.
+	Resolve(ctx context.Context, ep Episode, fresh bool) (Stream, error)
+	// InvalidateStream removes the failed cached value without deleting a concurrent replacement.
+	InvalidateStream(ctx context.Context, ep Episode, stream Stream) error
 }
 
 // Stream is a playable episode: the HLS master playlist and its subtitles.
 type Stream struct {
+	Cached    bool   `json:"-"` // true only when Resolve reused a stored stream
 	Master    string // absolute URL
 	Subtitles []Subtitle
 }

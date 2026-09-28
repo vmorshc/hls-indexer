@@ -41,10 +41,15 @@ var ErrBadTitleID = errors.New("bad uakino title id")
 
 // Title loads the title page and its playlist. Movies without a playlist use
 // the inline player when it points to a player host.
-func (c *Client) Title(ctx context.Context, titleID string) (source.Title, error) {
+func (c *Client) Title(ctx context.Context, titleID string, options source.TitleOptions) (source.Title, error) {
 	m := titleIDRe.FindStringSubmatch(titleID)
 	if m == nil {
 		return source.Title{}, ErrBadTitleID
+	}
+	var cached source.Title
+	if c.cacheGet(ctx, "title:"+m[1], &cached) {
+		cached.ID = titleID
+		return cached, nil
 	}
 	body, final, err := c.getSite(ctx, "/"+titleID+".html", nil)
 	if err != nil {
@@ -85,11 +90,19 @@ func (c *Client) Title(ctx context.Context, titleID string) (source.Title, error
 	} else if len(t.Voices) > 0 {
 		t.Kind, t.Season = source.Movie, 0
 	}
+	if finished(t, options) {
+		c.cacheSet(ctx, "title:"+m[1], t)
+	}
 	return t, nil
 }
 
 // Resolve reads the player page: master playlist URL and subtitles.
-func (c *Client) Resolve(ctx context.Context, ep source.Episode) (source.Stream, error) {
+func (c *Client) Resolve(ctx context.Context, ep source.Episode, fresh bool) (source.Stream, error) {
+	var cached source.Stream
+	if !fresh && c.cacheGet(ctx, episodeKey("stream", ep), &cached) {
+		cached.Cached = true
+		return cached, nil
+	}
 	body, final, err := c.getPlayer(ctx, ep.Locator)
 	if err != nil {
 		return source.Stream{}, err
@@ -102,6 +115,7 @@ func (c *Client) Resolve(ctx context.Context, ep source.Episode) (source.Stream,
 	for _, sub := range p.Subtitles {
 		s.Subtitles = append(s.Subtitles, source.Subtitle{Label: sub.Label, Language: subtitleLanguage(sub.Label), URL: absURL(final, sub.URL)})
 	}
+	c.cacheSet(ctx, episodeKey("stream", ep), s)
 	return s, nil
 }
 
@@ -116,13 +130,37 @@ func absURL(base *url.URL, ref string) string {
 // Sample reads the player page, the master playlist and the best variant's
 // media playlist.
 func (c *Client) Sample(ctx context.Context, ep source.Episode) (source.Media, error) {
-	s, err := c.Resolve(ctx, ep)
+	if m, ok := c.CachedMedia(ctx, ep); ok {
+		return m, nil
+	}
+	s, err := c.Resolve(ctx, ep, false)
 	if err != nil {
 		return source.Media{}, err
 	}
-	body, final, err := c.getPlayer(ctx, s.Master)
+	m, err := c.sampleStream(ctx, s)
+	if err != nil && s.Cached && errors.Is(err, errPlaylistFetch) && ctx.Err() == nil {
+		if err := c.InvalidateStream(ctx, ep, s); err != nil {
+			return source.Media{}, err
+		}
+		s, err = c.Resolve(ctx, ep, true)
+		if err != nil {
+			return source.Media{}, err
+		}
+		m, err = c.sampleStream(ctx, s)
+	}
 	if err != nil {
 		return source.Media{}, err
+	}
+	c.cacheSet(ctx, episodeKey("media", ep), m)
+	return m, nil
+}
+
+var errPlaylistFetch = errors.New("playlist fetch failed")
+
+func (c *Client) sampleStream(ctx context.Context, s source.Stream) (source.Media, error) {
+	body, final, err := c.getPlayer(ctx, s.Master)
+	if err != nil {
+		return source.Media{}, fmt.Errorf("%w: %w", errPlaylistFetch, err)
 	}
 	variants, err := hls.ParseMaster(body, final)
 	if err != nil {
@@ -131,7 +169,7 @@ func (c *Client) Sample(ctx context.Context, ep source.Episode) (source.Media, e
 	best := hls.Best(variants)
 	body, final, err = c.getPlayer(ctx, best.URL)
 	if err != nil {
-		return source.Media{}, err
+		return source.Media{}, fmt.Errorf("%w: %w", errPlaylistFetch, err)
 	}
 	media, err := hls.ParseMedia(body, final)
 	if err != nil {
