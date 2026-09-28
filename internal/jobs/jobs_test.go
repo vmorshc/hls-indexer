@@ -356,3 +356,27 @@ func TestRetryNeedsFailedJob(t *testing.T) {
 		}
 	}
 }
+
+// A finish retried after its lost reply keeps the published files when *arr
+// already deleted the history entry. Only a queue delete stops the run.
+func TestFinishAfterDelete(t *testing.T) {
+	ctx := context.Background()
+	s := jobs.New(testenv.Redis(t))
+
+	s.Add(ctx, "r1", "t", "sonarr", jobs.PriorityNormal)
+	j := claim(t, s)
+	complete(t, s, j, 1)
+	if _, err := s.DeleteHistory(ctx, j.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	complete(t, s, j, 1) // retry after a lost reply
+
+	s.Add(ctx, "r2", "t", "sonarr", jobs.PriorityNormal)
+	j = claim(t, s)
+	if _, err := s.DeleteQueued(ctx, j.ID); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := s.Complete(ctx, j, "/d", 1); ok || err != nil {
+		t.Fatalf("complete cancelled: ok=%v err=%v", ok, err)
+	}
+}

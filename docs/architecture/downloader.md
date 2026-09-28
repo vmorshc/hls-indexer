@@ -16,7 +16,7 @@ Completed | Failed → history delete → archived (archive=1) | gone (archive=0
 - The worker claims jobs by priority, then age. `worker.jobs` sets how many run at once (default 1). `-100` is stored and orders as `0`.
 - Priority `-2` adds the job `Paused`, out of the queue. Resume queues it with priority `0`, as in SABnzbd.
 - Pause takes a `Queued` job out of the queue. On a `Downloading` job, the worker checks the job every second and stops the run: staging removed, progress reset, no status write. Resume queues the job again. It starts from zero.
-- Each claim starts a new run (`run` counter on the job). Progress writes apply only while their run is current. Terminal writes also need status `Downloading`, and a repeat of the same run's terminal write succeeds. A resumed or deleted job ignores its old run. A run that publishes after a pause removes its published folder. The worker never runs two runs of one job at once and skips a claim that a newer claim replaced.
+- Each claim starts a new run (`run` counter on the job). Progress writes apply only while their run is current. Terminal writes also need status `Downloading`, and a repeat of the same run's terminal write succeeds. A resumed or queue-deleted job ignores its old run. A run that publishes after a pause or queue delete removes its published folder. A terminal write retried after a lost reply succeeds even if *arr already deleted the history entry, so the published folder stays. The worker never runs two runs of one job at once and skips a claim that a newer claim replaced.
 - A worker restart re-queues `Downloading` jobs. They start again from zero with clean staging. `Paused` jobs stay paused.
 - `Downloading` covers resolve, segment download, mux and validation.
 

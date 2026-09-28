@@ -19,6 +19,7 @@ Job keys (`internal/jobs`):
 | `hls-indexer:queue` | zset | pending job IDs, score = −priority × 10¹³ + created ms. Paused jobs are not in it. |
 | `hls-indexer:active` | zset | queued, paused and running job IDs, score = created ms |
 | `hls-indexer:dedup:<category>:<releaseId>` | string | active job ID |
+| `hls-indexer:cancelled:<jobId>` | string | set by queue delete, TTL 1 day. A finish of a missing job fails only with it. |
 | `hls-indexer:history` | zset | finished job IDs, archived included, score = finished ms |
 
 - Releases and search results are never stored. The release ID carries everything the worker needs.

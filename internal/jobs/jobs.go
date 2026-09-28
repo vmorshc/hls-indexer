@@ -24,7 +24,13 @@ const (
 	historyKey = Prefix + "history" // zset: finished job IDs, score = finished ms
 )
 
-func jobKey(id string) string              { return Prefix + "job:" + id }
+func jobKey(id string) string    { return Prefix + "job:" + id }
+func cancelKey(id string) string { return Prefix + "cancelled:" + id }
+
+// cancelTTL keeps the queue delete marker. A cancelled run stops within a
+// second, so this covers any finish that races the delete.
+const cancelTTL = 24 * time.Hour
+
 func dedupKey(category, rel string) string { return Prefix + "dedup:" + category + ":" + rel }
 
 // Status values match the SABnzbd names.
@@ -284,8 +290,9 @@ func (s *Store) Current(ctx context.Context, j Job) (bool, error) {
 }
 
 // Complete moves the job to history as Completed. ok is false when the run is
-// no longer current (paused, resumed or deleted) and nothing changed. A retry
-// after a lost reply reports ok.
+// stopped (paused, resumed or queue-deleted) and nothing changed. A retry
+// after a lost reply reports ok, also when the history entry is deleted by
+// then: only a queue delete removes a job without finishing it.
 func (s *Store) Complete(ctx context.Context, j Job, storage string, bytes int64) (ok bool, err error) {
 	return s.finish(ctx, j, "status", Completed, "storage", storage, "bytes", bytes)
 }
@@ -296,8 +303,11 @@ func (s *Store) Fail(ctx context.Context, j Job, message string) (ok bool, err e
 }
 
 // finishScript moves a job to history if run ARGV[1] is the live run. A job
-// this run already finished reports success, so a retried call is safe.
+// this run already finished reports success, so a retried call is safe. A
+// missing job without the cancel marker KEYS[6] was finished and deleted from
+// history, so it also reports success.
 var finishScript = redis.NewScript(`
+if redis.call('EXISTS', KEYS[1]) == 0 then return 1 - redis.call('EXISTS', KEYS[6]) end
 if redis.call('HGET', KEYS[1], 'run') ~= ARGV[1] then return 0 end
 local st = redis.call('HGET', KEYS[1], 'status')
 if st == 'Completed' or st == 'Failed' then return 1 end
@@ -311,17 +321,10 @@ return 1
 `)
 
 func (s *Store) finish(ctx context.Context, j Job, values ...any) (bool, error) {
-	cur, err := s.Get(ctx, j.ID)
-	if errors.Is(err, ErrNotFound) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
 	now := s.now().UnixMilli()
 	args := append([]any{j.Run, j.ID, now}, append(values, "finished", now)...)
 	return finishScript.Run(ctx, s.rdb,
-		[]string{jobKey(j.ID), activeKey, queueKey, historyKey, dedupKey(cur.Category, cur.Release)},
+		[]string{jobKey(j.ID), activeKey, queueKey, historyKey, dedupKey(j.Category, j.Release), cancelKey(j.ID)},
 		args...).Bool()
 }
 
@@ -359,10 +362,11 @@ redis.call('ZREM', KEYS[2], ARGV[1])
 redis.call('ZREM', KEYS[3], ARGV[1])
 if redis.call('GET', KEYS[4]) == ARGV[1] then redis.call('DEL', KEYS[4]) end
 redis.call('DEL', KEYS[1])
+redis.call('SET', KEYS[5], 1, 'EX', ARGV[2])
 return 1
 `)
 
-// DeleteQueued drops an active job. gone is true when the job no longer
+// DeleteQueued drops an active job and marks it cancelled for Complete and Fail. gone is true when the job no longer
 // exists: dropped now or before. A finished job stays and gone is false. The
 // API calls it.
 func (s *Store) DeleteQueued(ctx context.Context, id string) (gone bool, err error) {
@@ -374,7 +378,8 @@ func (s *Store) DeleteQueued(ctx context.Context, id string) (gone bool, err err
 		return false, err
 	}
 	return deleteActiveScript.Run(ctx, s.rdb,
-		[]string{jobKey(id), queueKey, activeKey, dedupKey(j.Category, j.Release)}, id).Bool()
+		[]string{jobKey(id), queueKey, activeKey, dedupKey(j.Category, j.Release), cancelKey(id)},
+		id, int(cancelTTL.Seconds())).Bool()
 }
 
 // deleteHistoryScript archives (ARGV[2] = 1) or deletes a finished job.
