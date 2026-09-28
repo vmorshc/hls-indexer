@@ -19,7 +19,9 @@ worker:
   x264_crf: 20
   aac_bitrate: "192k"
 uakino:
+  # Site root. Change it when UAKino moves to a new domain.
   base_url: "https://uakino.best"
+  # Requests per second to the site. Player pages and the CDN are not limited.
   rps: 1
   # Hosts accepted as inline movie players (iframe#pre), subdomains included.
   player_hosts: ["ashdi.vip"]
