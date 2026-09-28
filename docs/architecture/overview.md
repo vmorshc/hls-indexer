@@ -91,8 +91,10 @@ A source turns a query into titles and a release coordinate into a playable stre
 |---|---|
 | Search titles | Candidates: title ID, names, year, season, kind |
 | Load a title | Voices with episodes. Takes expected episode count and final-episode aired confirmation for cache decisions. |
-| Sample an episode | Best variant resolution, bandwidth and duration, for release quality and size |
-| Resolve an episode or movie voice | HLS master URL and subtitle tracks: VTT URL, label, ISO 639-2 language |
+| Read cached episode media | Previously sampled resolution, bandwidth and duration, or a miss |
+| Sample an episode | Best variant resolution, bandwidth and duration, cached only for that episode |
+| Resolve an episode or movie voice | HLS master URL, cache provenance and subtitle tracks: VTT URL, label, ISO 639-2 language. Supports forced fresh resolution. |
+| Invalidate a failed stream | Deletes only the matching cached stream, preserving concurrent replacements |
 
 `internal/catalog` holds the list of sources. A release ID prefix must name one of them, else `t=get` answers `300`.
 

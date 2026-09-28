@@ -547,8 +547,13 @@ const sampleConcurrency = 4
 // other episodes, then builds the release titles.
 func (c *Catalog) sample(ctx context.Context, page []candidate) error {
 	first := map[string]int{}
+	cached := map[int]source.Media{}
 	var order []string
 	for i, r := range page {
+		if m, ok := r.src.CachedMedia(ctx, r.ep); ok {
+			cached[i] = m
+			continue
+		}
 		if _, ok := first[r.voice]; !ok {
 			first[r.voice] = i
 			order = append(order, r.voice)
@@ -580,7 +585,10 @@ func (c *Catalog) sample(ctx context.Context, page []candidate) error {
 		return firstErr
 	}
 	for i := range page {
-		m := media[page[i].voice]
+		m, ok := cached[i]
+		if !ok {
+			m = media[page[i].voice]
+		}
 		page[i].name.Resolution = release.Resolution(m.Width, m.Height)
 		page[i].rel.Title = release.Title(page[i].name)
 		page[i].rel.Size = m.Size()

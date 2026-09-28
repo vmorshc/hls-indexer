@@ -48,7 +48,7 @@ Shrek.2.2004.1080p.WEB-DL.UKR-TakTrebaProdakshn
 ## Size and quality
 
 Size = best-variant `BANDWIDTH` × sum of `EXTINF` / 8. It is an estimate.
-The flow samples one episode per voice and reuses its quality and size for the voice's other episodes. It samples only voices on the returned page, after sorting and paging. It uses real per-episode data when cached.
+The flow samples one episode per voice and reuses its quality and size for the voice's other episodes. It samples only voices on the returned page, after sorting and paging. It checks each returned episode's cached measurements first, using its own quality and size when present. Among remaining misses, it samples one episode per voice. Only the sampled episode enters the media cache, never the other episodes receiving its estimate. Workers do not populate this cache.
 
 ## Search flow
 

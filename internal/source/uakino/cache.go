@@ -2,7 +2,10 @@ package uakino
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
+	"github.com/redis/go-redis/v9"
 	"github.com/vmorshc/hls-indexer/internal/source"
 )
 
@@ -24,6 +27,34 @@ func finished(t source.Title, options source.TitleOptions) bool {
 		}
 	}
 	return true
+}
+
+func episodeKey(kind string, ep source.Episode) string {
+	return fmt.Sprintf("%s:%x", kind, sha256.Sum256([]byte(ep.Locator)))
+}
+
+// CachedMedia returns only data measured for this episode, never a voice estimate.
+func (c *Client) CachedMedia(ctx context.Context, ep source.Episode) (source.Media, bool) {
+	var m source.Media
+	ok := c.cacheGet(ctx, episodeKey("media", ep), &m)
+	return m, ok
+}
+
+var invalidateStream = redis.NewScript(`
+if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end
+return 0
+`)
+
+// InvalidateStream only removes the stream that failed, not a newer resolution.
+func (c *Client) InvalidateStream(ctx context.Context, ep source.Episode, stream source.Stream) error {
+	if c.rdb == nil {
+		return nil
+	}
+	b, err := json.Marshal(stream)
+	if err != nil {
+		return err
+	}
+	return invalidateStream.Run(ctx, c.rdb, []string{cachePrefix + episodeKey("stream", ep)}, b).Err()
 }
 
 const cachePrefix = "hls-indexer:uakino:"

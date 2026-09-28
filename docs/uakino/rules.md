@@ -49,6 +49,10 @@ The caller passes `source.TitleOptions`: expected TMDb episode count and whether
 
 UAKino stores the parsed page and playlist together under the numeric news ID. Workers and title-only searches can reuse an existing finished entry without metadata. Cache hits preserve the caller's title ID and do not extend expiration. `uakino.cache_ttl` defaults to `720h` (30 days), overridden by `UAKINO_CACHE_TTL`. Nil Redis disables caching. Redis read errors or malformed entries fall back to the site, and cache write errors do not fail a search.
 
+Episode media and streams use separate keys derived from a SHA-256 hash of the player locator. Only search sampling writes measured resolution, bandwidth and duration. Search checks each returned episode's cache before sampling one uncached episode per voice. It does not store estimates copied to other episodes. Workers do not record media.
+
+A stream entry includes the master URL and subtitle tracks. Resolve returns whether it used the cache. A cached master or media playlist fetch failure removes that stream only if Redis still holds the failed value, then triggers one fresh resolve and one playlist retry. Search sampling follows the same rule as the worker. Fresh-URL failures, parse failures, non-VOD worker playlists and cancellation do not trigger recovery. SAB retry bypasses the stream cache and replaces it after successful resolution. Cache reads do not renew any TTL.
+
 ## Test titles
 
 | Title ID | Case |
