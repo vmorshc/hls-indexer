@@ -54,13 +54,13 @@ const (
 
 // Job is one download.
 type Job struct {
-	FreshResolve bool // SAB retry bypasses the source stream cache
 	ID           string
 	Release      string // release ID
 	Title        string // release title, the output file name without extension
 	Category     string
 	Priority     int
 	Status       string
+	FreshResolve bool // SAB retry bypasses the source stream cache
 	// Run counts claims. Worker writes carry it and apply only while it is
 	// current, so a paused, resumed or deleted job ignores a stale run.
 	Run      int64

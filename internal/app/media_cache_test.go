@@ -2,11 +2,12 @@ package app_test
 
 import (
 	"fmt"
-	"github.com/vmorshc/hls-indexer/internal/testenv"
 	"net/http"
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/vmorshc/hls-indexer/internal/testenv"
 )
 
 func TestCachedEpisodeOverridesVoiceEstimate(t *testing.T) {

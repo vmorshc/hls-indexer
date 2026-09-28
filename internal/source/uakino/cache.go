@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+
 	"github.com/redis/go-redis/v9"
+
 	"github.com/vmorshc/hls-indexer/internal/source"
 )
 

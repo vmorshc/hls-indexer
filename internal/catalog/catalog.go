@@ -286,7 +286,9 @@ func (c *Catalog) titleOptions(ctx context.Context, show tmdb.Show, season int) 
 	options := source.TitleOptions{ExpectedEpisodes: se.EpisodeCount}
 	eps, err := c.tmdb.SeasonEpisodes(ctx, show.ID, season)
 	if err != nil {
-		return options, err
+		// Air dates only determine cache eligibility. Keep the search available
+		// when that optional lookup fails, but preserve cancellation.
+		return options, ctx.Err()
 	}
 	today := time.Now().UTC().Format("2006-01-02")
 	for _, ep := range eps {

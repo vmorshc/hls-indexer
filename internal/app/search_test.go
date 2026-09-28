@@ -481,6 +481,11 @@ func TestTMDbCachedInRedis(t *testing.T) {
 		t.Errorf("second search made %d TMDb requests", e.tmdb.Count()-n)
 	}
 	eq(t, "cached result", titles(second), titles(first))
+	for _, mode := range []string{"queue", "history"} {
+		if got := slots(t, e.Env, mode, ""); len(got) != 0 {
+			t.Errorf("search created %s entries: %v", mode, got)
+		}
+	}
 
 	ctx := context.Background()
 	keys, err := e.Redis.Keys(ctx, "hls-indexer:tmdb:*").Result()

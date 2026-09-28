@@ -54,7 +54,7 @@ Progress for `queue`: completed segments and bytes against the playlist total an
 |---|---|
 | Playlist fetch fails with a cached HLS URL | For a master or media fetch failure, the source conditionally deletes the failed cached stream. The worker forces one fresh resolve and retries playlist loading once, using the new subtitles too. Parse failures, non-VOD playlists and cancellation do not trigger recovery. |
 | Source outage, segment retries exhausted, codec error, validation fails | `Failed` with `fail_message`, staging removed |
-| SAB `retry` of a `Failed` job | New job with the same release, title, category and priority. It bypasses the stream cache and overwrites it after successful resolution. The job stores this requirement before enqueueing, so a worker restart preserves it. The failed job leaves history, as in SABnzbd. When the same release is already active in the category, retry returns that job's ID (`addfile` dedup). |
+| SAB `retry` of a `Failed` job | New job with the same release, title, category and priority. It bypasses the stream cache and overwrites it after successful resolution. The job stores this requirement before enqueueing, so a worker restart preserves it. The failed job leaves history, as in SABnzbd. When the same release is already active in the category, retry returns that job's ID without changing its resolve mode (`addfile` dedup). |
 | Queue delete of a `Downloading` job | The worker sees the job gone and stops as on pause. Staging is removed even with `del_files=0`. |
 | Delete with `del_files=1` | The API removes only `<jobId>` folders in `incomplete` and `downloads` |
 

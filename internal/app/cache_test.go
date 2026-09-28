@@ -48,6 +48,28 @@ func TestTitleCachePolicy(t *testing.T) {
 	}
 }
 
+func TestSeasonMetadataFailureDoesNotFailSearch(t *testing.T) {
+	tm := &testenv.FakeTMDb{}
+	ua := &testenv.FakeUAKino{}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/season/2") {
+			http.Error(w, "unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		tm.ServeHTTP(w, r)
+	})
+	e := startSearch(t, testenv.Options{UAKino: ua, TMDb: handler, Redis: true})
+	q := "t=tvsearch&tvdbid=360295&season=2"
+	if len(e.search(t, q).Channel.Items) == 0 {
+		t.Fatal("missing releases")
+	}
+	before := ua.Count("GET /engine/ajax/playlists.php")
+	e.search(t, q)
+	if ua.Count("GET /engine/ajax/playlists.php") == before {
+		t.Fatal("cached without air-date confirmation")
+	}
+}
+
 func TestTitleCacheExpires(t *testing.T) {
 	ua := &testenv.FakeUAKino{Hide: []string{"13405-shrek-privid-lorda-farkuada"}}
 	e := startSearch(t, testenv.Options{UAKino: ua, Redis: true, Configure: func(c *config.Config) { c.UAKino.CacheTTL = time.Second }})

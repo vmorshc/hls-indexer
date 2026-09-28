@@ -2,6 +2,7 @@ package uakino_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sync/atomic"
@@ -12,6 +13,36 @@ import (
 	"github.com/vmorshc/hls-indexer/internal/source/uakino"
 	"github.com/vmorshc/hls-indexer/internal/testenv"
 )
+
+func TestSampleCancellationDoesNotResolve(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	var players atomic.Int64
+	e := testenv.Start(t, testenv.Options{Redis: true, UAKino: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/vod/1" {
+			players.Add(1)
+			fmt.Fprintf(w, `new Playerjs({file:"http://%s/master.m3u8"})`, r.Host)
+			return
+		}
+		cancel()
+		<-r.Context().Done()
+	})})
+	c, err := uakino.New(uakino.Options{BaseURL: e.UAKino.URL, RPS: 1000, Redis: e.Redis, CacheTTL: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ep := source.Episode{Locator: e.UAKino.URL + "/vod/1"}
+	if _, err := c.Resolve(ctx, ep, false); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Sample(ctx, ep); !errors.Is(err, context.Canceled) {
+		t.Fatalf("sample error: %v", err)
+	}
+	s, err := c.Resolve(context.Background(), ep, false)
+	if err != nil || !s.Cached || players.Load() != 1 {
+		t.Fatalf("cancelled sample invalidated or resolved stream: %+v %v", s, err)
+	}
+}
 
 func TestEpisodeAndStreamCacheExpire(t *testing.T) {
 	ua := &testenv.FakeUAKino{}
