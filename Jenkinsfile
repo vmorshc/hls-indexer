@@ -41,8 +41,9 @@ pipeline {
           // Tests need Redis: DB 0 holds claims, each package takes its own DB.
           docker.image('redis:8-alpine').withRun('', 'redis-server --save "" --appendonly no') { redis ->
             sh "until docker exec ${redis.id} redis-cli ping; do sleep 1; done"
+            // -count=1: the Go test cache lives in the workspace, tests must run every build.
             goInside("--link ${redis.id}:redis -e TEST_REDIS_URL=redis://redis:6379/0") {
-              sh 'gotestsum --format testname --junitfile report/junit.xml -- ./...'
+              sh 'gotestsum --format testname --junitfile report/junit.xml -- -count=1 ./...'
             }
           }
         }
