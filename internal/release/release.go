@@ -109,7 +109,7 @@ func Resolution(width, height int) string {
 		return "2160p"
 	case width >= 1800 || height >= 1000:
 		return "1080p"
-	case width >= 1200 && height >= 700:
+	case width >= 1200 || height >= 700:
 		return "720p"
 	case width >= 1000 || height >= 560:
 		return "576p"
