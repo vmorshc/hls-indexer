@@ -113,7 +113,7 @@ func (p Pipeline) Mux(ctx context.Context, m hls.Media, subs []Subtitle, out str
 	stdin.Close()
 	if writeErr != nil {
 		cancel()
-		cmd.Wait()
+		_ = cmd.Wait() // the process was cancelled, writeErr is the cause
 		wg.Wait()
 		return writeErr
 	}

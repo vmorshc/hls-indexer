@@ -472,7 +472,7 @@ func (s *Store) list(ctx context.Context, key string, desc bool) ([]Job, error) 
 	var ids []string
 	var err error
 	if desc {
-		ids, err = s.rdb.ZRevRange(ctx, key, 0, -1).Result()
+		ids, err = s.rdb.ZRangeArgs(ctx, redis.ZRangeArgs{Key: key, Start: 0, Stop: -1, Rev: true}).Result()
 	} else {
 		ids, err = s.rdb.ZRange(ctx, key, 0, -1).Result()
 	}

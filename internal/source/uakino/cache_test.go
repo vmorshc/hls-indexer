@@ -86,7 +86,7 @@ func TestSampleRecoversCachedStream(t *testing.T) {
 			}
 			fmt.Fprintf(w, `new Playerjs({file:"http://%s/%s.m3u8"})`, r.Host, path)
 		case "/old.m3u8":
-			http.Error(w, "expired", 403)
+			http.Error(w, "expired", http.StatusForbidden)
 		case "/new.m3u8":
 			fmt.Fprint(w, "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=1920x1080\nmedia.m3u8\n")
 		case "/media.m3u8":

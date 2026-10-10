@@ -20,7 +20,7 @@ import (
 	"github.com/vmorshc/hls-indexer/internal/release"
 )
 
-var errBadNZB = errors.New("Unknown release")
+var errBadNZB = errors.New("Unknown release") //nolint:staticcheck // SABnzbd API error text
 
 // addfile accepts an HLS Indexer NZB and creates a job. It never waits for the download.
 func (h *Handler) addfile(w http.ResponseWriter, r *http.Request) {

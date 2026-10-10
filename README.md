@@ -113,6 +113,12 @@ go test ./internal/downloader -update                   # rewrite golden files
 UAKINO_LIVE=1 go test ./internal/source/uakino/...     # live UAKino, overwrites fixtures
 ```
 
+Lint with `golangci-lint run ./...` (config in `.golangci.yml`).
+
+## CI
+
+Jenkins runs `Jenkinsfile` on every push to a `feature/*` branch: build, lint, tests with a Redis sidecar. The stages run in the image from `ci/Dockerfile` (Go, golangci-lint, gotestsum, ffmpeg). Test results are published as a JUnit report.
+
 ## Docs
 
 - [docs/architecture/overview.md](docs/architecture/overview.md): roles, modules, deployment.
