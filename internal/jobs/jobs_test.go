@@ -2,6 +2,7 @@ package jobs_test
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -83,7 +84,10 @@ func TestPauseQueuedJob(t *testing.T) {
 	if err := s.Pause(ctx, a); err != nil {
 		t.Fatalf("pause twice: %v", err)
 	}
-	if q, _ := s.Queue(ctx, ""); len(q) != 2 || q[0].Status != jobs.Paused {
+	// Both jobs can share the created ms, so the queue order between them is not fixed.
+	q, _ := s.Queue(ctx, "")
+	i := slices.IndexFunc(q, func(j jobs.Job) bool { return j.ID == a })
+	if len(q) != 2 || i < 0 || q[i].Status != jobs.Paused {
 		t.Fatalf("queue %+v", q)
 	}
 	if j := claim(t, s); j.ID != b {
