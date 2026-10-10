@@ -166,7 +166,7 @@ func TestCachedStreamRecovery(t *testing.T) {
 					return false
 				}
 				if expired.Load() && (strings.Contains(p, "/old/") && strings.HasSuffix(p, tt.broken+".m3u8") || tt.freshFails && strings.Contains(p, "/new/")) {
-					http.Error(w, "expired", 403)
+					http.Error(w, "expired", http.StatusForbidden)
 					return true
 				}
 				if strings.HasSuffix(p, "master.m3u8") {

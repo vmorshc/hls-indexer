@@ -97,7 +97,7 @@ func Group(voice string) string {
 func words(s string, ascii bool) []string {
 	s = strings.NewReplacer("'", "", "’", "", "ʼ", "").Replace(s)
 	return strings.FieldsFunc(Translit(s), func(r rune) bool {
-		return (ascii && r > unicode.MaxASCII) || !(unicode.IsLetter(r) || unicode.IsDigit(r))
+		return (ascii && r > unicode.MaxASCII) || !unicode.IsLetter(r) && !unicode.IsDigit(r)
 	})
 }
 

@@ -141,8 +141,7 @@ func (h *Handler) get(w http.ResponseWriter, id string) {
 	}
 	w.Header().Set("Content-Type", "application/x-nzb")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+strings.ReplaceAll(rid.String(), ":", "_")+`.nzb"`)
-	w.Write([]byte(xml.Header))
-	w.Write(b)
+	_, _ = w.Write(append([]byte(xml.Header), b...)) // the client is gone, nothing to report
 }
 
 const nzbNS = "http://www.newzbin.com/DTD/2003/nzb"
@@ -302,6 +301,5 @@ func writeXML(w http.ResponseWriter, contentType string, v any) {
 		return
 	}
 	w.Header().Set("Content-Type", contentType+"; charset=utf-8")
-	w.Write([]byte(xml.Header))
-	w.Write(b)
+	_, _ = w.Write(append([]byte(xml.Header), b...)) // the client is gone, nothing to report
 }
