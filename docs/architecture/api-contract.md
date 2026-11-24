@@ -16,6 +16,10 @@ Full profile with request and response examples: `~/notes/HLS bridge — API-к�
 - Every call except `t=caps` carries `apikey`. The indexer and downloader have separate keys. Keep keys out of logs.
 - Newznab returns UTF-8 XML. SABnzbd returns JSON (`output=json`).
 
+## Health: `/healthz`
+
+`GET /healthz` returns `200 ok` without keys and without Redis. Kubernetes probes and load balancers use it.
+
 ## Newznab: `/indexer/api`
 
 | `t` | Params | Result |

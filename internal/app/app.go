@@ -44,6 +44,7 @@ func NewAPI(cfg config.Config, rdb *redis.Client, log *slog.Logger) (http.Handle
 	}
 	cat := catalog.New(tmdb.New(cfg.TMDb.BaseURL, cfg.Secrets.TMDbAPIKey.Reveal(), rdb), ua)
 	mux := http.NewServeMux()
+	mux.HandleFunc("/healthz", healthz)
 	mux.Handle("/indexer/api", newznab.New(cfg.Secrets.IndexerAPIKey.Reveal(), cfg.HTTP.PublicURL, cat, log))
 	var store *jobs.Store
 	if rdb != nil {
@@ -51,6 +52,12 @@ func NewAPI(cfg config.Config, rdb *redis.Client, log *slog.Logger) (http.Handle
 	}
 	mux.Handle("/downloader/api", sabnzbd.New(cfg.Secrets.DownloaderAPIKey.Reveal(), cfg.Paths.Downloads, cfg.Paths.Incomplete, store, cat.HasSource, log))
 	return mux, nil
+}
+
+// healthz answers liveness checks without touching Redis or sources.
+func healthz(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write([]byte("ok\n"))
 }
 
 func newUAKino(cfg config.Config, rdb *redis.Client) (source.Source, error) {
