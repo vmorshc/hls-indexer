@@ -126,8 +126,4 @@ Jenkins runs `Jenkinsfile` on every push to a `feature/*` branch: build, lint, t
 
 ## Kubernetes
 
-Helm chart: `deploy/hls-indexer` (api, worker, Redis, Service, Secret). Image: `ghcr.io/vmorshc/hls-indexer`.
-
-```bash
-helm template hls-indexer deploy/hls-indexer
-```
+The Helm chart lives in [vmorshc/hls-indexer-chart](https://github.com/vmorshc/hls-indexer-chart). Every push to `main` runs `.github/workflows/image.yml`: it builds `ghcr.io/vmorshc/hls-indexer` for amd64 and arm64, tags it `0.1.<run number>` and `sha-<commit>`, and writes the version into the chart's `values.yaml`. Argo CD syncs the chart repository.
