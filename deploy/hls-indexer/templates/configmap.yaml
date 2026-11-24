@@ -1,9 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: {{ .Release.Name }}-config
-  labels:
-    {{- include "hls-indexer.labels" . | nindent 4 }}
-data:
-  REDIS_URL: redis://{{ .Release.Name }}-redis:6379/0
-  PUBLIC_URL: {{ .Values.config.publicUrl | quote }}
