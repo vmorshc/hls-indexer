@@ -1,0 +1,6 @@
+apiVersion: v2
+name: hls-indexer
+description: HLS Indexer (api and worker) with Redis
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

@@ -123,3 +123,11 @@ Jenkins runs `Jenkinsfile` on every push to a `feature/*` branch: build, lint, t
 
 - [docs/architecture/overview.md](docs/architecture/overview.md): roles, modules, deployment.
 - [docs/uakino/](docs/uakino/): UAKino requests and rules.
+
+## Kubernetes
+
+Helm chart: `deploy/hls-indexer` (api, worker, Redis, Service, Secret). Image: `ghcr.io/vmorshc/hls-indexer`.
+
+```bash
+helm template hls-indexer deploy/hls-indexer
+```
